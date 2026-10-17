@@ -63,15 +63,6 @@ export const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children
   <span className="text-micro font-semibold uppercase text-ink-faint truncate">{children}</span>
 );
 
-export const ProgressBar: React.FC<{ value: number; className?: string }> = ({ value, className = '' }) => (
-  <div className={`h-1 w-full rounded-full bg-white/[0.1] overflow-hidden ${className}`}>
-    <div
-      className="h-full rounded-full bg-ink transition-[width] duration-500 ease-linear"
-      style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
-    />
-  </div>
-);
-
 export const formatDuration = (sec: number) => {
   const total = Math.max(0, Math.floor(sec));
   const h = Math.floor(total / 3600);

@@ -216,6 +216,7 @@ $script:prevTrackArt = ""
 $script:currentArt = ""
 $script:trackChangedTick = 0
 $script:artVerified = $false
+$script:lastArtReadTick = 0
 
 function Get-MediaState {
     if ($null -eq $mgr) {
@@ -304,11 +305,16 @@ function Get-MediaState {
             }
         } catch {}
 
-        # Read album art thumbnail with anti-lag stale image filter
-        $art = ""
-        if ($script:artVerified -and $script:currentArt) {
-            $art = $script:currentArt
-        } elseif ($props -and $props.Thumbnail -and $asStreamMethod) {
+        # Read album art thumbnail with anti-lag stale image filter.
+        # Apps (browsers especially, on auto-advance) can publish the real cover several seconds after
+        # the track changes, so an accepted thumbnail is not final: re-read on every poll for the first
+        # 10s of a track, then every 5s, and switch whenever the image changes.
+        $sinceChange = [Environment]::TickCount - $script:trackChangedTick
+        $sinceArtRead = [Environment]::TickCount - $script:lastArtReadTick
+        $needArtRead = (-not $script:artVerified) -or ($sinceChange -lt 10000) -or ($sinceArtRead -ge 5000) -or ($sinceArtRead -lt 0)
+        $art = $script:currentArt
+        if ($needArtRead -and $props -and $props.Thumbnail -and $asStreamMethod) {
+            $script:lastArtReadTick = [Environment]::TickCount
             try {
                 $streamOp = $props.Thumbnail.OpenReadAsync()
                 $stream = Await-WinRt -Operation $streamOp -ResultType $streamType -TimeoutMs 1500
@@ -327,10 +333,9 @@ function Get-MediaState {
                             # Windows briefly serves the previous song's thumbnail right after a track change,
                             # so reject an identical image only during that short window. After it, an identical
                             # image is genuine (same album, or the app just filled in title/artist late).
-                            $sinceChange = [Environment]::TickCount - $script:trackChangedTick
                             $inStaleWindow = ($sinceChange -ge 0 -and $sinceChange -lt 2500)
                             if ($inStaleWindow -and $script:prevTrackArt -and ($candidateArt -eq $script:prevTrackArt)) {
-                                $art = ""
+                                $art = $script:currentArt
                             } else {
                                 $art = $candidateArt
                                 $script:currentArt = $candidateArt
@@ -665,7 +670,6 @@ if ($initialAudio) {
 # Main loop
 $lastTitle = ""
 $lastStatus = $false
-$lastPosition = -1
 $lastAlbumArt = ""
 $lastBatteryPercent = -1
 $lastCharging = $false
@@ -687,17 +691,15 @@ while ($true) {
         Start-Sleep -Milliseconds 100
     }
 
-    # Real-time media update (title, play/pause, position sync, or new thumbnail)
+    # Real-time media update (title, play/pause, or new thumbnail)
     $media = Get-MediaState
     $changed = ($media.title -ne $lastTitle) -or `
                ($media.isPlaying -ne $lastStatus) -or `
-               ($media.albumArt -ne $lastAlbumArt) -or `
-               ($media.isPlaying -and [math]::Abs($media.position - $lastPosition) -ge 1)
+               ($media.albumArt -ne $lastAlbumArt)
 
     if ($changed) {
         $lastTitle = $media.title
         $lastStatus = $media.isPlaying
-        $lastPosition = $media.position
         $lastAlbumArt = $media.albumArt
         [Console]::WriteLine((ConvertTo-Json $media -Compress))
     }

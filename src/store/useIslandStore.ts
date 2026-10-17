@@ -47,7 +47,6 @@ interface IslandStore {
   updateAudio: (audio: Partial<AudioInfo>) => void;
   setWifiNetworks: (networks: WifiNetwork[] | null) => void;
   setBtDevices: (devices: BluetoothDevice[] | null) => void;
-  tickMediaPosition: () => void;
 }
 
 const getInitialStealth = () => {
@@ -284,10 +283,4 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
 
   setBtDevices: (btDevices) => set({ btDevices }),
 
-  tickMediaPosition: () => {
-    const { media } = get();
-    if (media.isPlaying && media.duration > 0 && media.position < media.duration) {
-      set({ media: { ...media, position: media.position + 1 } });
-    }
-  },
 }));

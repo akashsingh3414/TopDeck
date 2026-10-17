@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { IslandWidget } from './types';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
-import { IconButton, ProgressBar, SectionLabel, formatDuration } from '../components/ui';
+import { IconButton, SectionLabel } from '../components/ui';
 
 // Clean application title to hide raw hex IDs (e.g. 308046B0AF4A39CB)
 const getCleanAppTitle = (raw?: string) => {
@@ -19,73 +19,6 @@ const getCleanAppTitle = (raw?: string) => {
     return 'Now Playing';
   }
   return raw.split('!')[0];
-};
-
-const FALLBACK_TINT = '#F5F5F7';
-
-const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [h * 60, s, l];
-};
-
-// Dominant vivid color of the artwork, lifted so it stays visible on the black island.
-// Greyscale or unreadable art falls back to white.
-const extractTint = (src: string): Promise<string> =>
-  new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const size = 24;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(FALLBACK_TINT);
-        ctx.drawImage(img, 0, 0, size, size);
-        const data = ctx.getImageData(0, 0, size, size).data;
-
-        // Weight each pixel by how vivid it is, so dark backgrounds and grey areas don't dominate
-        let r = 0, g = 0, b = 0, total = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          const [, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
-          const w = s * (1 - Math.abs(2 * l - 1));
-          r += data[i] * w; g += data[i + 1] * w; b += data[i + 2] * w; total += w;
-        }
-        if (total < size * size * 0.05) return resolve(FALLBACK_TINT);
-
-        const [h, s, l] = rgbToHsl(r / total, g / total, b / total);
-        const sat = Math.round(Math.max(s, 0.45) * 100);
-        const light = Math.round(Math.min(0.75, Math.max(l, 0.6)) * 100);
-        resolve(`hsl(${Math.round(h)} ${sat}% ${light}%)`);
-      } catch {
-        resolve(FALLBACK_TINT);
-      }
-    };
-    img.onerror = () => resolve(FALLBACK_TINT);
-    img.src = src;
-  });
-
-export const useArtworkTint = (albumArt?: string) => {
-  const [tint, setTint] = useState(FALLBACK_TINT);
-  useEffect(() => {
-    if (!albumArt) {
-      setTint(FALLBACK_TINT);
-      return;
-    }
-    let cancelled = false;
-    extractTint(albumArt).then((t) => !cancelled && setTint(t));
-    return () => {
-      cancelled = true;
-    };
-  }, [albumArt]);
-  return tint;
 };
 
 // Monochrome equalizer; bar heights are [min, max, durationMs, delayMs]
@@ -187,12 +120,28 @@ export const MediaPeek: React.FC = () => {
   );
 };
 
+// Green while comfortable, yellow when getting loud, red near max
+const volumeColor = (level: number) => (level >= 80 ? '#FF453A' : level >= 50 ? '#FFD60A' : '#30D158');
+
 // System volume. While dragging, the local value wins so helper echoes don't make the thumb jump.
 const VolumeSlider: React.FC = () => {
   const { volume, muted } = useIslandStore((s) => s.audio);
   const updateAudio = useIslandStore((s) => s.updateAudio);
   const [dragValue, setDragValue] = useState<number | null>(null);
   const lastSentRef = useRef(0);
+  // Briefly highlight the number whenever the level changes, including from keyboard volume keys
+  const [flash, setFlash] = useState(false);
+  const firstRenderRef = useRef(true);
+
+  useEffect(() => {
+    if (firstRenderRef.current) {
+      firstRenderRef.current = false;
+      return;
+    }
+    setFlash(true);
+    const t = setTimeout(() => setFlash(false), 1200);
+    return () => clearTimeout(t);
+  }, [volume]);
 
   if (volume < 0) return null; // helper couldn't read the output device
 
@@ -209,28 +158,55 @@ const VolumeSlider: React.FC = () => {
   };
 
   const value = dragValue ?? volume;
+  const color = muted ? '#636366' : volumeColor(value);
+  const active = dragValue !== null || flash;
 
   return (
-    <input
-      type="range"
-      min={0}
-      max={100}
-      value={value}
-      title={`Volume ${value}%`}
-      aria-label="Volume"
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => {
-        const level = Number(e.target.value);
-        setDragValue(level);
-        // Throttled so a drag doesn't flood the helper's command queue
-        if (Date.now() - lastSentRef.current > 120) send(level);
-      }}
-      onPointerUp={commit}
-      onKeyUp={commit}
-      onBlur={commit}
-      className={`flex-1 min-w-0 h-1 cursor-pointer ${muted ? 'opacity-40' : ''}`}
-      style={{ accentColor: '#F5F5F7' }}
-    />
+    <>
+      {/* Custom bar; a transparent native range input on top handles dragging, clicks and arrow keys */}
+      <div className="group relative flex-1 min-w-0 h-4 flex items-center">
+        <div className="relative w-full h-1.5 rounded-full bg-white/[0.12]">
+          <div
+            className="absolute inset-y-0 left-0 rounded-full transition-[background-color] duration-200"
+            style={{ width: `${value}%`, backgroundColor: color }}
+          />
+          <div
+            className={`absolute top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.6)] transition-opacity duration-150 ${
+              active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
+            style={{ left: `${value}%` }}
+          />
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={value}
+          title={`Volume ${value}%`}
+          aria-label="Volume"
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            const level = Number(e.target.value);
+            setDragValue(level);
+            // Throttled so a drag doesn't flood the helper's command queue
+            if (Date.now() - lastSentRef.current > 120) send(level);
+          }}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        />
+      </div>
+      {/* Live level in the bar's color; full strength while dragging or right after a change */}
+      <span
+        className={`w-[22px] flex-shrink-0 text-left text-caption font-semibold tabular-nums transition-opacity duration-200 ${
+          active ? 'opacity-100' : 'opacity-60'
+        }`}
+        style={{ color }}
+      >
+        {value}
+      </span>
+    </>
   );
 };
 
@@ -246,11 +222,8 @@ export const MediaExpanded: React.FC = () => {
     window.islandAPI?.sendMediaCommand(cmd);
   };
 
-  const hasTimeline = media.duration > 0;
-  const progress = hasTimeline ? (media.position / media.duration) * 100 : 0;
-
   return (
-    <div className="relative flex w-full h-full px-5 pb-4 pt-1 gap-4 select-none overflow-hidden">
+    <div className="relative flex w-full h-full px-5 pb-4 pt-1 gap-3 select-none overflow-hidden">
       {/* Soft ambient tint taken from the artwork */}
       {media.albumArt && (
         <img
@@ -263,7 +236,8 @@ export const MediaExpanded: React.FC = () => {
 
       <Artwork size="expanded" className="relative w-[124px] h-[124px] rounded-2xl shadow-[0_8px_24px_rgba(0,0,0,0.6)]" />
 
-      <div className="relative flex flex-col justify-between flex-1 min-w-0 py-0.5">
+      {/* Title block and controls sit together, centered against the artwork */}
+      <div className="relative flex flex-col justify-center gap-3 flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div className="flex flex-col min-w-0">
             <SectionLabel>{getCleanAppTitle(media.appTitle)}</SectionLabel>
@@ -277,18 +251,8 @@ export const MediaExpanded: React.FC = () => {
           </div>
         </div>
 
-        {hasTimeline && (
-          <div className="flex flex-col gap-1">
-            <ProgressBar value={progress} />
-            <div className="flex justify-between text-micro text-ink-faint tabular-nums tracking-normal">
-              <span>{formatDuration(media.position)}</span>
-              <span>-{formatDuration(media.duration - media.position)}</span>
-            </div>
-          </div>
-        )}
-
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <IconButton title="Previous Track" onClick={() => send('PREVIOUS')}>
               <SkipBack className="fill-current" />
             </IconButton>
@@ -304,7 +268,7 @@ export const MediaExpanded: React.FC = () => {
               <SkipForward className="fill-current" />
             </IconButton>
           </div>
-          <div className="flex items-center gap-1.5 flex-1 min-w-0 max-w-[132px] ml-3">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 ml-2">
             <IconButton title={isMuted ? 'Unmute' : 'Mute'} variant={isMuted ? 'on' : 'ghost'} onClick={() => send('MUTE')}>
               {isMuted ? <VolumeX /> : <Volume2 />}
             </IconButton>

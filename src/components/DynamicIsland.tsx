@@ -3,7 +3,7 @@ import { motion, AnimatePresence, Transition, Variants, useReducedMotion } from 
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { ClockWidget } from '../widgets/ClockWidget';
-import { MediaWidget, useArtworkTint } from '../widgets/MediaWidget';
+import { MediaWidget } from '../widgets/MediaWidget';
 import { TimerWidget, useTimerStore, playChime } from '../widgets/TimerWidget';
 import {
   Clock,
@@ -62,41 +62,6 @@ const contentSlideVariants: Variants = {
   }),
 };
 
-// Hairline along the flat part of the idle pill's bottom edge (inset past the rounded corners).
-// A running focus timer wins in accent blue; otherwise the playing track, tinted by its artwork.
-const IdleProgressLine: React.FC = () => {
-  const timerTotal = useTimerStore((s) => s.totalTime);
-  const timerLeft = useTimerStore((s) => s.timeLeft);
-  const timerFinished = useTimerStore((s) => s.isFinished);
-  const media = useIslandStore((s) => s.media);
-  const tint = useArtworkTint(media.albumArt);
-
-  let progress: number;
-  let color: string;
-  if (timerTotal > 0 && !timerFinished) {
-    progress = (timerTotal - timerLeft) / timerTotal;
-    color = '#0A84FF'; // accent
-  } else if (media.isPlaying && media.duration > 0) {
-    progress = media.position / media.duration;
-    color = tint;
-  } else {
-    return null;
-  }
-
-  const inset = STATE_DIMENSIONS.idle.bottomRadius;
-  return (
-    <div
-      className="absolute bottom-0 h-[2px] rounded-full bg-white/[0.08] overflow-hidden pointer-events-none"
-      style={{ left: inset, right: inset }}
-    >
-      <div
-        className="h-full rounded-full transition-[width,background-color] duration-1000 ease-linear"
-        style={{ width: `${Math.min(100, Math.max(0, progress * 100))}%`, backgroundColor: color }}
-      />
-    </div>
-  );
-};
-
 export const DynamicIsland: React.FC = () => {
   const {
     state,
@@ -137,17 +102,9 @@ export const DynamicIsland: React.FC = () => {
   const timerFinished = useTimerStore((s) => s.isFinished);
   // Seeded from the restored timer so an already-alerted "Time's up" doesn't chime again on launch
   const prevTimerFinishedRef = useRef(useTimerStore.getState().isFinished);
-  const tickMediaPosition = useIslandStore((s) => s.tickMediaPosition);
 
   // Determine whether the island should be visible or tucked in stealth mode
   const isVisible = !stealthMode || isHovered || pinned || state === 'expanded' || state === 'peek';
-
-  // Real-time media position ticker
-  useEffect(() => {
-    if (!media.isPlaying) return;
-    const interval = setInterval(tickMediaPosition, 1000);
-    return () => clearInterval(interval);
-  }, [media.isPlaying, tickMediaPosition]);
 
   // Timer countdown hook
   useEffect(() => {
@@ -522,7 +479,6 @@ export const DynamicIsland: React.FC = () => {
           </AnimatePresence>
         </div>
 
-        {state === 'idle' && isVisible && <IdleProgressLine />}
       </motion.div>
     </div>
   );
