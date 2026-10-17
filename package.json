@@ -1,6 +1,6 @@
 {
   "name": "topdeck-windows",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -71,7 +71,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TopDeck"
+      "shortcutName": "TopDeck",
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "electronLanguages": [
       "en-US"

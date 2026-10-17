@@ -41,20 +41,25 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
 No Node.js, no terminal. It's a normal Windows installer (about 70 MB).
 
 1. Go to the [**Releases**](../../releases) page of this repo.
-2. Download the latest `TopDeck Setup X.X.X.exe`.
+2. Download the latest `TopDeck-X.X.X.exe`.
 3. Double-click it and follow the installer prompts (install directory and shortcut preferences).
 4. If Windows shows a SmartScreen warning, click **More info → Run anyway**. (The installer isn't code-signed.)
 5. Launch **TopDeck** from the Start Menu or Desktop shortcut.
 
 ### Start with Windows
 
-Right-click the **TopDeck** icon in the system tray (near the clock) and tick **Start with Windows**.
+1. Install TopDeck with the installer (see above) and launch it from the Start Menu.
+2. Right-click the **TopDeck** icon in the system tray (near the clock) and tick **Start with Windows**.
+
+TopDeck now launches each time you sign in. You can check or turn it off in **Settings → Apps → Startup** (or Task Manager → Startup apps).
+
+> Running from source (`npm start` / `npm run dev`)? Don't tick **Start with Windows** there. It registers the development copy of Electron, which opens a blank Electron window at sign-in instead of TopDeck. If that happened, untick it, or switch off the "Electron" entry in **Settings → Apps → Startup**.
 
 The tray menu also has **Toggle Super Hide**, **Reposition to Center**, **Restart Native Helper** (if media or Wi-Fi info stops updating), and **Quit TopDeck**.
 
 ### Updating
 
-Download the newer `TopDeck Setup X.X.X.exe` from Releases and run it. It upgrades your existing install in place, and your settings and autostart preference are kept.
+Download the newer `TopDeck-X.X.X.exe` from Releases and run it. It upgrades your existing install in place, and your settings and autostart preference are kept.
 
 ---
 
@@ -65,8 +70,8 @@ Download the newer `TopDeck Setup X.X.X.exe` from Releases and run it. It upgrad
 * **Arrow Right (`→`) / Arrow Left (`←`)**: next / previous tab (System → Music → Timer).
 * **Header row** (expanded island)
   * `‹` `System | Music | Timer` `›`: switch tabs.
-  * `📌` Pin: keep the island expanded even when the mouse leaves.
-  * `👁️` Super Hide: toggle stealth mode on/off.
+  * Pin: keep the island expanded even when the mouse leaves.
+  * Super Hide: toggle stealth mode on/off.
 
 ---
 
@@ -88,15 +93,15 @@ Want to contribute? You're welcome to. Open an issue to discuss an idea or bug, 
 ```
 topdeck/
 ├── assets/
-│   ├── icon.png                 # High-resolution application icon
-│   └── tray.png                 # Windows system tray icon
+│   ├── icon.svg / icon.png      # App + installer logo (SVG source, rendered PNG)
+│   └── tray.svg / tray.png      # System tray icon (SVG source, rendered PNG)
 ├── electron/
 │   ├── main.ts                  # Main process: window, click-through hit-testing, tray, notifications, IPC
 │   └── preload.ts               # Secure typed contextBridge API
 ├── native/
 │   └── helper.ps1               # Media session, volume/mute, Wi-Fi & Bluetooth, battery, fullscreen helper
 ├── scripts/
-│   └── make-icon.js             # Generates the tray icon
+│   └── make-icon.js             # Renders the SVG logos to PNG (npx electron scripts/make-icon.js)
 ├── src/
 │   ├── components/
 │   │   ├── DynamicIsland.tsx    # Island shell, header controls, spring physics
@@ -141,7 +146,6 @@ npm run dist
 ```
 
 Changes to `electron/main.ts` or `electron/preload.ts` need a full restart of the app (not just a reload). Changes to `native/helper.ps1` take effect after **Restart Native Helper** in the tray menu.
-
 ---
 
 ## License

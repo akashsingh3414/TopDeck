@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Tray version of the logo: the blue pill alone, readable at 16-32px on light and dark taskbars -->
+  <rect x="1" y="8" width="30" height="16" rx="8" fill="#0A84FF"/>
+  <g fill="#FFFFFF">
+    <rect x="11" y="13" width="2" height="6" rx="1"/>
+    <rect x="15" y="11" width="2" height="10" rx="1"/>
+    <rect x="19" y="13.5" width="2" height="5" rx="1"/>
+  </g>
+</svg>
