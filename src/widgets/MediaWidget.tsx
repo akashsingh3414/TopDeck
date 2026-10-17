@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { IslandWidget } from './types';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
@@ -19,6 +19,73 @@ const getCleanAppTitle = (raw?: string) => {
     return 'Now Playing';
   }
   return raw.split('!')[0];
+};
+
+const FALLBACK_TINT = '#F5F5F7';
+
+const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+};
+
+// Dominant vivid color of the artwork, lifted so it stays visible on the black island.
+// Greyscale or unreadable art falls back to white.
+const extractTint = (src: string): Promise<string> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const size = 24;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(FALLBACK_TINT);
+        ctx.drawImage(img, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+
+        // Weight each pixel by how vivid it is, so dark backgrounds and grey areas don't dominate
+        let r = 0, g = 0, b = 0, total = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const [, s, l] = rgbToHsl(data[i], data[i + 1], data[i + 2]);
+          const w = s * (1 - Math.abs(2 * l - 1));
+          r += data[i] * w; g += data[i + 1] * w; b += data[i + 2] * w; total += w;
+        }
+        if (total < size * size * 0.05) return resolve(FALLBACK_TINT);
+
+        const [h, s, l] = rgbToHsl(r / total, g / total, b / total);
+        const sat = Math.round(Math.max(s, 0.45) * 100);
+        const light = Math.round(Math.min(0.75, Math.max(l, 0.6)) * 100);
+        resolve(`hsl(${Math.round(h)} ${sat}% ${light}%)`);
+      } catch {
+        resolve(FALLBACK_TINT);
+      }
+    };
+    img.onerror = () => resolve(FALLBACK_TINT);
+    img.src = src;
+  });
+
+export const useArtworkTint = (albumArt?: string) => {
+  const [tint, setTint] = useState(FALLBACK_TINT);
+  useEffect(() => {
+    if (!albumArt) {
+      setTint(FALLBACK_TINT);
+      return;
+    }
+    let cancelled = false;
+    extractTint(albumArt).then((t) => !cancelled && setTint(t));
+    return () => {
+      cancelled = true;
+    };
+  }, [albumArt]);
+  return tint;
 };
 
 // Monochrome equalizer; bar heights are [min, max, durationMs, delayMs]
@@ -120,6 +187,53 @@ export const MediaPeek: React.FC = () => {
   );
 };
 
+// System volume. While dragging, the local value wins so helper echoes don't make the thumb jump.
+const VolumeSlider: React.FC = () => {
+  const { volume, muted } = useIslandStore((s) => s.audio);
+  const updateAudio = useIslandStore((s) => s.updateAudio);
+  const [dragValue, setDragValue] = useState<number | null>(null);
+  const lastSentRef = useRef(0);
+
+  if (volume < 0) return null; // helper couldn't read the output device
+
+  const send = (level: number) => {
+    lastSentRef.current = Date.now();
+    window.islandAPI?.sendMediaCommand(`SET_VOLUME:${level}`);
+  };
+
+  const commit = () => {
+    if (dragValue === null) return;
+    send(dragValue);
+    updateAudio({ volume: dragValue, muted: dragValue > 0 ? false : muted });
+    setDragValue(null);
+  };
+
+  const value = dragValue ?? volume;
+
+  return (
+    <input
+      type="range"
+      min={0}
+      max={100}
+      value={value}
+      title={`Volume ${value}%`}
+      aria-label="Volume"
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const level = Number(e.target.value);
+        setDragValue(level);
+        // Throttled so a drag doesn't flood the helper's command queue
+        if (Date.now() - lastSentRef.current > 120) send(level);
+      }}
+      onPointerUp={commit}
+      onKeyUp={commit}
+      onBlur={commit}
+      className={`flex-1 min-w-0 h-1 cursor-pointer ${muted ? 'opacity-40' : ''}`}
+      style={{ accentColor: '#F5F5F7' }}
+    />
+  );
+};
+
 export const MediaExpanded: React.FC = () => {
   const media = useIslandStore((s) => s.media);
   // Real system mute state reported by the native helper
@@ -190,9 +304,12 @@ export const MediaExpanded: React.FC = () => {
               <SkipForward className="fill-current" />
             </IconButton>
           </div>
-          <IconButton title={isMuted ? 'Unmute' : 'Mute'} variant={isMuted ? 'on' : 'ghost'} onClick={() => send('MUTE')}>
-            {isMuted ? <VolumeX /> : <Volume2 />}
-          </IconButton>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 max-w-[132px] ml-3">
+            <IconButton title={isMuted ? 'Unmute' : 'Mute'} variant={isMuted ? 'on' : 'ghost'} onClick={() => send('MUTE')}>
+              {isMuted ? <VolumeX /> : <Volume2 />}
+            </IconButton>
+            <VolumeSlider />
+          </div>
         </div>
       </div>
     </div>

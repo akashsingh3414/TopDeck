@@ -216,9 +216,10 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
 
   updateMedia: (updated) => {
     const current = get().media;
+    // An artist appearing for the same title is the app filling in metadata late, not a new song
     const isNewTrack = Boolean(
       (updated.title && updated.title !== current.title) ||
-      (updated.artist && updated.artist !== current.artist)
+      (updated.artist && current.artist && updated.artist !== current.artist)
     );
     const isPlaying = updated.isPlaying !== undefined ? updated.isPlaying : current.isPlaying;
     const justStartedPlaying = isPlaying && !current.isPlaying;
@@ -226,9 +227,10 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
 
     // Preserve existing thumbnail if current update didn't include one but song is same.
     // When a new track starts, if updated.albumArt is not provided, strictly clear it so previous song's thumbnail never leaks!
+    // An empty title means the media session went away, so the art goes too.
     const albumArt = isNewTrack
       ? (updated.albumArt || '')
-      : (updated.albumArt !== undefined ? updated.albumArt : current.albumArt);
+      : (updated.albumArt || (updated.title === '' ? '' : current.albumArt));
 
     // Only auto-switch to media if user has NOT explicitly picked another tab
     let nextActive = activeWidget;

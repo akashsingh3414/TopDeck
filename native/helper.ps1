@@ -107,7 +107,7 @@ internal interface IAudioEndpointVolume {
     int NotImpl_UnregisterControlChangeNotify();
     int NotImpl_GetChannelCount();
     int NotImpl_SetMasterVolumeLevel();
-    int NotImpl_SetMasterVolumeLevelScalar();
+    [PreserveSig] int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
     int NotImpl_GetMasterVolumeLevel();
     [PreserveSig] int GetMasterVolumeLevelScalar(out float pfLevel);
     int NotImpl_SetChannelVolumeLevel();
@@ -152,6 +152,17 @@ public static class AudioHelper {
         float level;
         if (ep.GetMasterVolumeLevelScalar(out level) != 0) return -1;
         return (int)Math.Round(level * 100);
+    }
+
+    // level 0-100; also unmutes, like the Windows volume flyout does
+    public static bool SetVolume(int level) {
+        var ep = GetEndpoint();
+        if (ep == null) return false;
+        Guid ctx = Guid.Empty;
+        float scalar = Math.Max(0, Math.Min(100, level)) / 100f;
+        if (ep.SetMasterVolumeLevelScalar(scalar, ref ctx) != 0) return false;
+        if (level > 0) ep.SetMute(false, ref ctx);
+        return true;
     }
 
     public static bool SetMute(bool mute) {
@@ -313,8 +324,12 @@ function Get-MediaState {
                             $mime = if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { "image/png" } else { "image/jpeg" }
                             $candidateArt = "data:$mime;base64," + [Convert]::ToBase64String($bytes)
                             
-                            # Never leak the previous song's thumbnail onto the new song!
-                            if ($script:prevTrackArt -and ($candidateArt -eq $script:prevTrackArt)) {
+                            # Windows briefly serves the previous song's thumbnail right after a track change,
+                            # so reject an identical image only during that short window. After it, an identical
+                            # image is genuine (same album, or the app just filled in title/artist late).
+                            $sinceChange = [Environment]::TickCount - $script:trackChangedTick
+                            $inStaleWindow = ($sinceChange -ge 0 -and $sinceChange -lt 2500)
+                            if ($inStaleWindow -and $script:prevTrackArt -and ($candidateArt -eq $script:prevTrackArt)) {
                                 $art = ""
                             } else {
                                 $art = $candidateArt
@@ -536,6 +551,13 @@ function Execute-MediaCmd([string]$cmd) {
         $rState = Get-RadiosState
         if ($rState) { [Console]::WriteLine((ConvertTo-Json $rState -Compress)) }
         [Console]::WriteLine((ConvertTo-Json (Get-WifiList) -Compress -Depth 4))
+        return
+    }
+
+    if ($uCmd -match '^SET_VOLUME:(\d{1,3})$') {
+        [void][AudioHelper]::SetVolume([int]$matches[1])
+        $aState = Get-AudioState
+        if ($aState) { [Console]::WriteLine((ConvertTo-Json $aState -Compress)) }
         return
     }
 

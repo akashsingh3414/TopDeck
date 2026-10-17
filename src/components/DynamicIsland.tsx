@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { motion, AnimatePresence, Transition, Variants } from 'framer-motion';
+import { motion, AnimatePresence, Transition, Variants, useReducedMotion } from 'framer-motion';
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { ClockWidget } from '../widgets/ClockWidget';
-import { MediaWidget } from '../widgets/MediaWidget';
+import { MediaWidget, useArtworkTint } from '../widgets/MediaWidget';
 import { TimerWidget, useTimerStore, playChime } from '../widgets/TimerWidget';
 import {
   Clock,
@@ -62,6 +62,41 @@ const contentSlideVariants: Variants = {
   }),
 };
 
+// Hairline along the flat part of the idle pill's bottom edge (inset past the rounded corners).
+// A running focus timer wins in accent blue; otherwise the playing track, tinted by its artwork.
+const IdleProgressLine: React.FC = () => {
+  const timerTotal = useTimerStore((s) => s.totalTime);
+  const timerLeft = useTimerStore((s) => s.timeLeft);
+  const timerFinished = useTimerStore((s) => s.isFinished);
+  const media = useIslandStore((s) => s.media);
+  const tint = useArtworkTint(media.albumArt);
+
+  let progress: number;
+  let color: string;
+  if (timerTotal > 0 && !timerFinished) {
+    progress = (timerTotal - timerLeft) / timerTotal;
+    color = '#0A84FF'; // accent
+  } else if (media.isPlaying && media.duration > 0) {
+    progress = media.position / media.duration;
+    color = tint;
+  } else {
+    return null;
+  }
+
+  const inset = STATE_DIMENSIONS.idle.bottomRadius;
+  return (
+    <div
+      className="absolute bottom-0 h-[2px] rounded-full bg-white/[0.08] overflow-hidden pointer-events-none"
+      style={{ left: inset, right: inset }}
+    >
+      <div
+        className="h-full rounded-full transition-[width,background-color] duration-1000 ease-linear"
+        style={{ width: `${Math.min(100, Math.max(0, progress * 100))}%`, backgroundColor: color }}
+      />
+    </div>
+  );
+};
+
 export const DynamicIsland: React.FC = () => {
   const {
     state,
@@ -91,6 +126,8 @@ export const DynamicIsland: React.FC = () => {
   } = useIslandStore();
 
   const pillRef = useRef<HTMLDivElement>(null);
+  // MotionConfig only disables transforms; width/height resizes need this to go instant too
+  const reduceMotion = useReducedMotion();
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -98,7 +135,8 @@ export const DynamicIsland: React.FC = () => {
   const timerTick = useTimerStore((s) => s.tick);
   const timerRunning = useTimerStore((s) => s.isRunning);
   const timerFinished = useTimerStore((s) => s.isFinished);
-  const prevTimerFinishedRef = useRef(false);
+  // Seeded from the restored timer so an already-alerted "Time's up" doesn't chime again on launch
+  const prevTimerFinishedRef = useRef(useTimerStore.getState().isFinished);
   const tickMediaPosition = useIslandStore((s) => s.tickMediaPosition);
 
   // Determine whether the island should be visible or tucked in stealth mode
@@ -167,6 +205,8 @@ export const DynamicIsland: React.FC = () => {
     const cleanup = window.islandAPI.onMediaUpdate((data) => {
       if (!data) return;
       if (data.type === 'media') {
+        // A failed read is transient; don't let it blank out the current track and artwork
+        if (data.error) return;
         updateMedia({
           title: data.title || '',
           artist: data.artist || '',
@@ -436,7 +476,7 @@ export const DynamicIsland: React.FC = () => {
           borderBottomLeftRadius: targetBottomRadius,
           borderBottomRightRadius: targetBottomRadius,
         }}
-        transition={islandSpring}
+        transition={reduceMotion ? { duration: 0 } : islandSpring}
         className={`relative bg-black text-white ${state === 'expanded' ? 'cursor-default' : 'cursor-pointer'} pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center`}
         style={{
           borderTopLeftRadius: 0,
@@ -481,6 +521,8 @@ export const DynamicIsland: React.FC = () => {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {state === 'idle' && isVisible && <IdleProgressLine />}
       </motion.div>
     </div>
   );

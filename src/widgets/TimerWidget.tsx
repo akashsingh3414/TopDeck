@@ -4,11 +4,15 @@ import { Timer, Play, Pause, RotateCcw, Bell, X } from 'lucide-react';
 import { create } from 'zustand';
 import { Chip, IconButton, SectionLabel, formatDuration } from '../components/ui';
 
-interface TimerStore {
+interface TimerState {
   isRunning: boolean;
   timeLeft: number; // in seconds
   totalTime: number;
   isFinished: boolean;
+  endsAt: number | null; // epoch ms while running; the countdown is derived from it
+}
+
+interface TimerStore extends TimerState {
   start: (seconds: number) => void;
   pause: () => void;
   resume: () => void;
@@ -16,11 +20,35 @@ interface TimerStore {
   tick: () => void;
 }
 
-export const useTimerStore = create<TimerStore>((set, get) => ({
+const TIMER_STORAGE_KEY = 'island_timer';
+
+const IDLE_TIMER: TimerState = {
   isRunning: false,
   timeLeft: 0,
   totalTime: 0,
   isFinished: false,
+  endsAt: null,
+};
+
+const secondsUntil = (endsAt: number) => Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+
+// Restore a timer that was running or paused when TopDeck last closed
+const loadTimer = (): TimerState => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TIMER_STORAGE_KEY) || 'null') as TimerState | null;
+    if (!saved || typeof saved.totalTime !== 'number') return IDLE_TIMER;
+    if (saved.isRunning && saved.endsAt) {
+      // Still running: catch up on the time that passed while closed (tick finishes it if it ran out)
+      return { ...saved, timeLeft: secondsUntil(saved.endsAt) };
+    }
+    return saved;
+  } catch {
+    return IDLE_TIMER;
+  }
+};
+
+export const useTimerStore = create<TimerStore>((set, get) => ({
+  ...loadTimer(),
 
   start: (seconds) => {
     set({
@@ -28,41 +56,44 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
       timeLeft: seconds,
       totalTime: seconds,
       isFinished: false,
+      endsAt: Date.now() + seconds * 1000,
     });
   },
 
-  pause: () => set({ isRunning: false }),
+  pause: () => {
+    const { endsAt } = get();
+    set({ isRunning: false, timeLeft: endsAt ? secondsUntil(endsAt) : get().timeLeft, endsAt: null });
+  },
 
   resume: () => {
-    if (get().timeLeft > 0) {
-      set({ isRunning: true });
+    const { timeLeft } = get();
+    if (timeLeft > 0) {
+      set({ isRunning: true, endsAt: Date.now() + timeLeft * 1000 });
     }
   },
 
-  reset: () => {
-    set({
-      isRunning: false,
-      timeLeft: 0,
-      totalTime: 0,
-      isFinished: false,
-    });
-  },
+  reset: () => set(IDLE_TIMER),
 
   tick: () => {
-    const { timeLeft, isRunning } = get();
-    if (!isRunning) return;
+    const { isRunning, endsAt } = get();
+    if (!isRunning || !endsAt) return;
 
-    if (timeLeft <= 1) {
-      set({
-        timeLeft: 0,
-        isRunning: false,
-        isFinished: true,
-      });
-    } else {
-      set({ timeLeft: timeLeft - 1 });
+    const timeLeft = secondsUntil(endsAt);
+    if (timeLeft <= 0) {
+      set({ timeLeft: 0, isRunning: false, isFinished: true, endsAt: null });
+    } else if (timeLeft !== get().timeLeft) {
+      set({ timeLeft });
     }
   },
 }));
+
+useTimerStore.subscribe(({ isRunning, timeLeft, totalTime, isFinished, endsAt }) => {
+  try {
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({ isRunning, timeLeft, totalTime, isFinished, endsAt }));
+  } catch {
+    // Storage unavailable; the timer still works for this session
+  }
+});
 
 // Short three-note chime synthesized with Web Audio, so no sound asset is needed
 export const playChime = () => {

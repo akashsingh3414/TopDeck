@@ -52,3 +52,18 @@ html, body {
     transform: rotate(360deg);
   }
 }
+
+/* Windows "Animation effects" off: stop decorative loops (record spin, equalizer, pulses)
+   and make CSS transitions instant. Loading spinners keep turning so progress stays visible. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

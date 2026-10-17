@@ -1,4 +1,5 @@
 import React from 'react';
+import { MotionConfig } from 'framer-motion';
 import { DynamicIsland } from './components/DynamicIsland';
 
 // Type declaration for islandAPI on window
@@ -21,9 +22,12 @@ declare global {
 
 export const App: React.FC = () => {
   return (
-    <div className="w-screen h-screen overflow-hidden bg-transparent select-none">
-      <DynamicIsland />
-    </div>
+    // reducedMotion="user": follows Windows "Animation effects"; springs and slides become instant
+    <MotionConfig reducedMotion="user">
+      <div className="w-screen h-screen overflow-hidden bg-transparent select-none">
+        <DynamicIsland />
+      </div>
+    </MotionConfig>
   );
 };
 
