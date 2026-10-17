@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, Transition, Variants } from 'framer-motion';
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { ClockWidget } from '../widgets/ClockWidget';
@@ -16,9 +16,16 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { IconButton } from './ui';
+
+const TABS: { id: WidgetType; label: string; title: string; Icon: typeof Clock }[] = [
+  { id: 'clock', label: 'System', title: 'System (Clock, Wi-Fi, Bluetooth & Battery)', Icon: Clock },
+  { id: 'media', label: 'Music', title: 'Music & Media', Icon: Music },
+  { id: 'timer', label: 'Timer', title: 'Focus Timer', Icon: TimerIcon },
+];
 
 // iOS TopDeck spring physics
-const islandSpring = {
+const islandSpring: Transition = {
   type: 'spring',
   stiffness: 450,
   damping: 34,
@@ -32,7 +39,7 @@ const SUPER_HIDE_TRIGGER_HEIGHT = 9;
 const SUPER_HIDE_RADIUS = 4;
 
 // Subtle cross-fade & micro-slide variants for smooth widget switching
-const contentSlideVariants = {
+const contentSlideVariants: Variants = {
   enter: (direction: number) => ({
     x: direction > 0 ? 12 : -12,
     opacity: 0,
@@ -75,7 +82,9 @@ export const DynamicIsland: React.FC = () => {
     setFullscreenHidden,
     updateMedia,
     updateBattery,
+    updateRadios,
     media,
+    hasUserSelectedTab,
   } = useIslandStore();
 
   const pillRef = useRef<HTMLDivElement>(null);
@@ -86,6 +95,7 @@ export const DynamicIsland: React.FC = () => {
   const timerTick = useTimerStore((s) => s.tick);
   const timerRunning = useTimerStore((s) => s.isRunning);
   const timerFinished = useTimerStore((s) => s.isFinished);
+  const prevTimerFinishedRef = useRef(false);
   const tickMediaPosition = useIslandStore((s) => s.tickMediaPosition);
 
   // Determine whether the island should be visible or tucked in stealth mode
@@ -105,11 +115,12 @@ export const DynamicIsland: React.FC = () => {
     return () => clearInterval(interval);
   }, [timerRunning, timerTick]);
 
-  // Peek on timer finished
+  // Peek on timer finished (rising edge only)
   useEffect(() => {
-    if (timerFinished) {
+    if (timerFinished && !prevTimerFinishedRef.current) {
       peekWidget('timer', 4000);
     }
+    prevTimerFinishedRef.current = timerFinished;
   }, [timerFinished, peekWidget]);
 
   // Keyboard navigation (Left / Right Arrow)
@@ -166,6 +177,14 @@ export const DynamicIsland: React.FC = () => {
           isCharging: data.isCharging,
           status: data.status,
         });
+      } else if (data.type === 'radios') {
+        updateRadios({
+          wifiEnabled: !!data.wifiEnabled,
+          wifiConnected: !!data.wifiConnected,
+          wifiSsid: data.wifiSsid || '',
+          wifiSignal: data.wifiSignal || 0,
+          btEnabled: !!data.btEnabled,
+        });
       } else if (data.type === 'fullscreen') {
         setFullscreenHidden(!!data.isFullscreen);
       }
@@ -174,7 +193,7 @@ export const DynamicIsland: React.FC = () => {
     return () => {
       cleanup();
     };
-  }, [updateMedia, updateBattery, setFullscreenHidden]);
+  }, [updateMedia, updateBattery, updateRadios, setFullscreenHidden]);
 
   // Report pill bounding rect to Electron main process for hit testing
   useEffect(() => {
@@ -197,26 +216,20 @@ export const DynamicIsland: React.FC = () => {
           return;
         }
 
-        if (pillRef.current) {
-          const rect = pillRef.current.getBoundingClientRect();
-          window.islandAPI.updatePillBounds({
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          });
-        }
+        // Send target bounds for state immediately so Electron's hit-testing loop
+        // never drops mouse capture while the spring animation is running!
+        const dim = STATE_DIMENSIONS[state];
+        const targetX = Math.round((560 - dim.width) / 2);
+        window.islandAPI.updatePillBounds({
+          x: targetX,
+          y: 0,
+          width: dim.width,
+          height: dim.height,
+        });
       }
     };
 
     updateBounds();
-    const timer = setTimeout(updateBounds, 80);
-    const interval = setInterval(updateBounds, 250);
-
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
-    };
   }, [state, isFullscreenHidden, isVisible]);
 
   if (isFullscreenHidden) {
@@ -235,10 +248,10 @@ export const DynamicIsland: React.FC = () => {
   };
 
   const handleMouseLeave = () => {
+    setIsHovered(false);
     if (stealthMode && !pinned) {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = setTimeout(() => {
-        setIsHovered(false);
         collapse(0);
       }, 550);
     } else {
@@ -276,7 +289,7 @@ export const DynamicIsland: React.FC = () => {
       }
       switch (activeWidget) {
         case 'media':
-          return <MediaWidget.idleView />;
+          return (hasUserSelectedTab || media.isPlaying) ? <MediaWidget.idleView /> : <ClockWidget.idleView />;
         case 'timer':
           return <TimerWidget.idleView />;
         case 'clock':
@@ -301,127 +314,79 @@ export const DynamicIsland: React.FC = () => {
     // 3. Expanded View
     if (state === 'expanded') {
       return (
-        <div className="relative flex flex-col w-full h-full pt-1 bg-black">
-          {/* Top Control Buttons: [ < ] [ > ] [ 📌 ] [ 👁️ ] */}
+        <div className="flex flex-col w-full h-full">
+          {/* Header: [<] [System | Music | Timer] [>]  ....  [pin] [hide] */}
           <div
-            className="absolute top-2.5 right-3 z-30 flex items-center space-x-1.5"
+            className="flex items-center justify-between h-11 px-3 pt-1 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Previous Widget Button */}
-            <button
-              onClick={prevWidget}
-              title="Previous Tab"
-              className="w-6 h-6 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-white/80 hover:text-white border border-white/[0.08] shadow-sm flex items-center justify-center transition-all active:scale-90"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-1">
+              <IconButton title="Previous tab (Left arrow)" size="sm" onClick={prevWidget}>
+                <ChevronLeft />
+              </IconButton>
 
-            {/* Next Widget Button */}
-            <button
-              onClick={nextWidget}
-              title="Next Tab"
-              className="w-6 h-6 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-white/80 hover:text-white border border-white/[0.08] shadow-sm flex items-center justify-center transition-all active:scale-90"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+              <div className="relative flex items-center p-0.5 rounded-full bg-white/[0.06]">
+                {TABS.map(({ id, label, title, Icon }) => {
+                  const isActive = activeWidget === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={title}
+                      onClick={() =>
+                        setActiveWidget(id, WIDGET_ORDER.indexOf(id) >= WIDGET_ORDER.indexOf(activeWidget) ? 1 : -1)
+                      }
+                      className={`relative h-6 px-2.5 rounded-full text-caption font-medium flex items-center gap-1.5 transition-colors duration-150 ${isActive ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
+                        }`}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="tab-indicator"
+                          className="absolute inset-0 rounded-full bg-white/[0.14]"
+                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                        />
+                      )}
+                      <Icon className="relative w-3 h-3" />
+                      <span className="relative">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Pin Island Button */}
-            <button
-              onClick={() => setPinned(!pinned)}
-              title={pinned ? 'Unpin island' : 'Pin island (keep expanded)'}
-              className={`w-6 h-6 rounded-full border shadow-sm flex items-center justify-center transition-all active:scale-90 ${pinned
-                  ? 'bg-white text-black border-white'
-                  : 'bg-white/[0.08] hover:bg-white/[0.16] text-white/80 hover:text-white border-white/[0.08]'
-                }`}
-            >
-              {pinned ? <Pin className="w-3.5 h-3.5 fill-black" /> : <PinOff className="w-3.5 h-3.5" />}
-            </button>
+              <IconButton title="Next tab (Right arrow)" size="sm" onClick={nextWidget}>
+                <ChevronRight />
+              </IconButton>
+            </div>
 
-            {/* Super Hide Toggle Button */}
-            <button
-              onClick={toggleStealthMode}
-              title={
-                stealthMode
-                  ? 'Super Hide: Active (auto-tucks to top edge until hovered)'
-                  : 'Super Hide: Off (click to auto-hide into top edge)'
-              }
-              className={`w-6 h-6 rounded-full border shadow-sm flex items-center justify-center transition-all active:scale-90 ${stealthMode
-                  ? 'bg-white text-black border-white'
-                  : 'bg-white/[0.08] hover:bg-white/[0.16] text-white/80 hover:text-white border-white/[0.08]'
-                }`}
-            >
-              {stealthMode ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <IconButton
+                title={pinned ? 'Unpin island' : 'Pin island (keep expanded)'}
+                size="sm"
+                variant={pinned ? 'on' : 'ghost'}
+                onClick={() => setPinned(!pinned)}
+              >
+                {pinned ? <Pin className="fill-current" /> : <PinOff />}
+              </IconButton>
+              <IconButton
+                title={
+                  stealthMode
+                    ? 'Super Hide: On (tucks into the top edge until hovered)'
+                    : 'Super Hide: Off (click to tuck into the top edge)'
+                }
+                size="sm"
+                variant={stealthMode ? 'on' : 'ghost'}
+                onClick={toggleStealthMode}
+              >
+                {stealthMode ? <EyeOff /> : <Eye />}
+              </IconButton>
+            </div>
           </div>
 
-          {/* Main Widget Body */}
-          <div className="flex-1 w-full overflow-hidden">
+          {/* Widget Body */}
+          <div className="flex-1 w-full min-h-0 overflow-hidden">
             {activeWidget === 'media' && <MediaWidget.expandedView />}
             {activeWidget === 'clock' && <ClockWidget.expandedView />}
             {activeWidget === 'timer' && <TimerWidget.expandedView />}
-          </div>
-
-          {/* Apple Segmented Tab Selector & Pagination Dots */}
-          <div
-            className="flex items-center justify-between py-1.5 px-4 bg-black border-t border-white/[0.08]"
-            style={{
-              borderBottomLeftRadius: currentDimensions.bottomRadius,
-              borderBottomRightRadius: currentDimensions.bottomRadius,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* 3 Quick segmented tabs: System, Music, Timer */}
-            <div className="flex items-center space-x-1">
-              <button
-                onClick={() => setActiveWidget('clock', -1)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center space-x-1.5 ${activeWidget === 'clock'
-                    ? 'bg-white/[0.14] text-white shadow-sm'
-                    : 'text-neutral-500 hover:text-neutral-300'
-                  }`}
-                title="System (Clock, Calendar & Battery)"
-              >
-                <Clock className="w-3 h-3" />
-                <span>System</span>
-              </button>
-
-              <button
-                onClick={() => setActiveWidget('media', 1)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center space-x-1.5 ${activeWidget === 'media'
-                    ? 'bg-white/[0.14] text-white shadow-sm'
-                    : 'text-neutral-500 hover:text-neutral-300'
-                  }`}
-                title="Music & Media"
-              >
-                <Music className="w-3 h-3" />
-                <span>Music</span>
-              </button>
-
-              <button
-                onClick={() => setActiveWidget('timer', 1)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all flex items-center space-x-1.5 ${activeWidget === 'timer'
-                    ? 'bg-white/[0.14] text-white shadow-sm'
-                    : 'text-neutral-500 hover:text-neutral-300'
-                  }`}
-                title="Focus Timer"
-              >
-                <TimerIcon className="w-3 h-3" />
-                <span>Timer</span>
-              </button>
-            </div>
-
-            {/* Apple-style Pagination Dots */}
-            <div className="flex items-center space-x-1.5">
-              {WIDGET_ORDER.map((widgetId: WidgetType) => {
-                const isActive = activeWidget === widgetId;
-                return (
-                  <span
-                    key={widgetId}
-                    className={`h-1 rounded-full transition-all duration-300 ${isActive ? 'w-3.5 bg-white' : 'w-1 bg-white/20'
-                      }`}
-                  />
-                );
-              })}
-            </div>
           </div>
         </div>
       );
@@ -452,15 +417,18 @@ export const DynamicIsland: React.FC = () => {
           borderBottomRightRadius: targetBottomRadius,
         }}
         transition={islandSpring}
-        className="relative bg-black text-white cursor-pointer pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center border-x border-b border-white/[0.1]"
+        className="relative bg-black text-white cursor-pointer pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center"
         style={{
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           borderBottomLeftRadius: targetBottomRadius,
           borderBottomRightRadius: targetBottomRadius,
+          // Hairline edge + soft drop shadow; no top edge so the island melts into the screen bezel
           boxShadow: !isVisible
-            ? '0 2px 8px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1)'
-            : '0 20px 40px -4px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+            ? '0 2px 8px rgba(0, 0, 0, 0.8), inset 0 -1px 0 rgba(255, 255, 255, 0.12)'
+            : state === 'expanded'
+              ? '0 24px 48px -12px rgba(0, 0, 0, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.1), inset 1px 0 0 rgba(255, 255, 255, 0.06), inset -1px 0 0 rgba(255, 255, 255, 0.06)'
+              : '0 8px 20px -6px rgba(0, 0, 0, 0.8), inset 0 -1px 0 rgba(255, 255, 255, 0.08)',
           transform: 'translateZ(0)',
         }}
       >

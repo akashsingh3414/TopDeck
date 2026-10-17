@@ -41,6 +41,17 @@ $propTypes = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMed
 $mgrReq = $managerType::RequestAsync()
 $mgr = Await-WinRt -Operation $mgrReq -ResultType $managerType -TimeoutMs 4000
 
+$radioType = [Windows.Devices.Radios.Radio, Windows.Devices.Radios, ContentType=WindowsRuntime]
+$script:radios = $null
+
+function Refresh-Radios {
+    try {
+        $radiosOp = $radioType::GetRadiosAsync()
+        $script:radios = Await-WinRt -Operation $radiosOp -ResultType ([System.Collections.Generic.IReadOnlyList[Windows.Devices.Radios.Radio]]) -TimeoutMs 2000
+    } catch {}
+}
+Refresh-Radios
+
 # Fullscreen Win32 API, Keyboard Media Key Fallbacks, and C# StdinListener
 $pinvoke = @'
 using System;
@@ -124,7 +135,28 @@ function Get-MediaState {
         return @{ ok = $false; error = "NoManager" }
     }
     try {
-        $session = $mgr.GetCurrentSession()
+        # Check all sessions first to find any actively PLAYING session
+        $session = $null
+        try {
+            $allSessions = $mgr.GetSessions()
+            if ($allSessions -and $allSessions.Count -gt 0) {
+                foreach ($s in $allSessions) {
+                    try {
+                        $pinfo = $s.GetPlaybackInfo()
+                        if ($pinfo -and $pinfo.PlaybackStatus.ToString() -eq "Playing") {
+                            $session = $s
+                            break
+                        }
+                    } catch {}
+                }
+            }
+        } catch {}
+
+        # If no session is actively playing, fall back to GetCurrentSession()
+        if ($null -eq $session) {
+            $session = $mgr.GetCurrentSession()
+        }
+
         if ($null -eq $session) {
             $script:lastTrackKey = ""
             $script:prevTrackArt = ""
@@ -205,12 +237,8 @@ function Get-MediaState {
                             $mime = if ($bytes.Length -ge 2 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50) { "image/png" } else { "image/jpeg" }
                             $candidateArt = "data:$mime;base64," + [Convert]::ToBase64String($bytes)
                             
-                            $elapsedSinceChange = [Environment]::TickCount - $script:trackChangedTick
-                            
-                            # If candidate art is identical to previous track's art and track changed recently (< 3.5s),
-                            # Windows SMTC has not yet updated the thumbnail for this new track and is still serving the old one.
-                            # Hold off so we NEVER display the previous song's thumbnail on the current song!
-                            if ($script:prevTrackArt -and ($candidateArt -eq $script:prevTrackArt) -and ($elapsedSinceChange -lt 3500)) {
+                            # Never leak the previous song's thumbnail onto the new song!
+                            if ($script:prevTrackArt -and ($candidateArt -eq $script:prevTrackArt)) {
                                 $art = ""
                             } else {
                                 $art = $candidateArt
@@ -286,13 +314,91 @@ function Check-Fullscreen {
     return $false
 }
 
+function Get-RadiosState {
+    try {
+        $wifiName = ""
+        $wifiSignal = 0
+        $wifiConnected = $false
+        
+        $wlanOut = netsh wlan show interfaces 2>$null
+        if ($wlanOut) {
+            foreach ($line in $wlanOut) {
+                if ($line -match '^\s*State\s*:\s*(.+)$') {
+                    $wifiConnected = ($matches[1].Trim() -eq 'connected')
+                }
+                if ($line -match '^\s*SSID\s*:\s*(.+)$') {
+                    $wifiName = $matches[1].Trim()
+                }
+                if ($line -match '^\s*Signal\s*:\s*(\d+)%') {
+                    $wifiSignal = [int]$matches[1]
+                }
+            }
+        }
+        
+        $btState = $false
+        $wifiState = $wifiConnected
+        
+        if ($script:radios) {
+            foreach ($r in $script:radios) {
+                if ($r.Kind.ToString() -eq "Bluetooth") {
+                    $btState = ($r.State.ToString() -eq "On")
+                }
+                if ($r.Kind.ToString() -eq "WiFi") {
+                    $wifiState = ($r.State.ToString() -eq "On")
+                }
+            }
+        }
+
+        return @{
+            type = "radios"
+            wifiEnabled = $wifiState
+            wifiConnected = $wifiConnected
+            wifiSsid = $wifiName
+            wifiSignal = $wifiSignal
+            btEnabled = $btState
+        }
+    } catch {
+        return $null
+    }
+}
+
 function Execute-MediaCmd([string]$cmd) {
     $executed = $false
+    $uCmd = $cmd.ToUpper().Trim()
+
+    if ($uCmd -in @("TOGGLE_WIFI", "WIFI_TOGGLE")) {
+        Refresh-Radios
+        if ($script:radios) {
+            $wf = $script:radios | Where-Object { $_.Kind.ToString() -eq "WiFi" } | Select-Object -First 1
+            if ($wf) {
+                $next = if ($wf.State.ToString() -eq "On") { [Windows.Devices.Radios.RadioState]::Off } else { [Windows.Devices.Radios.RadioState]::On }
+                [void](Await-WinRt -Operation ($wf.SetStateAsync($next)) -ResultType ([Windows.Devices.Radios.RadioAccessStatus]) -TimeoutMs 2000)
+            }
+        }
+        $rState = Get-RadiosState
+        if ($rState) { [Console]::WriteLine((ConvertTo-Json $rState -Compress)) }
+        return
+    }
+
+    if ($uCmd -in @("TOGGLE_BT", "BT_TOGGLE")) {
+        Refresh-Radios
+        if ($script:radios) {
+            $bt = $script:radios | Where-Object { $_.Kind.ToString() -eq "Bluetooth" } | Select-Object -First 1
+            if ($bt) {
+                $next = if ($bt.State.ToString() -eq "On") { [Windows.Devices.Radios.RadioState]::Off } else { [Windows.Devices.Radios.RadioState]::On }
+                [void](Await-WinRt -Operation ($bt.SetStateAsync($next)) -ResultType ([Windows.Devices.Radios.RadioAccessStatus]) -TimeoutMs 2000)
+            }
+        }
+        $rState = Get-RadiosState
+        if ($rState) { [Console]::WriteLine((ConvertTo-Json $rState -Compress)) }
+        return
+    }
+
     if ($mgr) {
         $session = $mgr.GetCurrentSession()
         if ($session) {
             try {
-                switch ($cmd.ToUpper().Trim()) {
+                switch ($uCmd) {
                     "PLAY" {
                         $res = Await-WinRt -Operation ($session.TryPlayAsync()) -ResultType ([bool]) -TimeoutMs 1500
                         $executed = ($res -eq $true)
@@ -321,7 +427,7 @@ function Execute-MediaCmd([string]$cmd) {
     # Universal Media Key Fallback
     if (-not $executed) {
         try {
-            switch ($cmd.ToUpper().Trim()) {
+            switch ($uCmd) {
                 "PLAY"     { [Win32Helper]::SendMediaKey(0xB3) } # VK_MEDIA_PLAY_PAUSE
                 "PAUSE"    { [Win32Helper]::SendMediaKey(0xB3) }
                 "TOGGLE"   { [Win32Helper]::SendMediaKey(0xB3) }
@@ -342,6 +448,11 @@ if ($initialBattery) {
     [Console]::WriteLine((ConvertTo-Json $initialBattery -Compress))
 }
 
+$initialRadios = Get-RadiosState
+if ($initialRadios) {
+    [Console]::WriteLine((ConvertTo-Json $initialRadios -Compress))
+}
+
 # Main loop
 $lastTitle = ""
 $lastStatus = $false
@@ -350,6 +461,10 @@ $lastAlbumArt = ""
 $lastBatteryPercent = -1
 $lastCharging = $false
 $lastFullscreen = $false
+$lastWifiEnabled = $null
+$lastWifiConnected = $null
+$lastWifiSsid = ""
+$lastBtEnabled = $null
 $loopCount = 0
 
 while ($true) {
@@ -383,6 +498,20 @@ while ($true) {
         if ($isFullscreen -ne $lastFullscreen) {
             $lastFullscreen = $isFullscreen
             [Console]::WriteLine((ConvertTo-Json @{ type = "fullscreen"; isFullscreen = $isFullscreen } -Compress))
+        }
+    }
+
+    if ($loopCount % 8 -eq 0) {
+        $rState = Get-RadiosState
+        if ($rState -and (($rState.wifiEnabled -ne $lastWifiEnabled) -or `
+                          ($rState.wifiConnected -ne $lastWifiConnected) -or `
+                          ($rState.wifiSsid -ne $lastWifiSsid) -or `
+                          ($rState.btEnabled -ne $lastBtEnabled))) {
+            $lastWifiEnabled = $rState.wifiEnabled
+            $lastWifiConnected = $rState.wifiConnected
+            $lastWifiSsid = $rState.wifiSsid
+            $lastBtEnabled = $rState.btEnabled
+            [Console]::WriteLine((ConvertTo-Json $rState -Compress))
         }
     }
 

@@ -9,6 +9,7 @@ export interface IslandAPI {
   sendMediaCommand: (command: string) => Promise<boolean>;
   getSystemStatus: () => Promise<any>;
   onToggleSuperHide: (callback: () => void) => () => void;
+  openSettings: (setting: string) => Promise<boolean>;
 }
 
 const api: IslandAPI = {
@@ -36,6 +37,9 @@ const api: IslandAPI = {
   },
   getSystemStatus: () => {
     return ipcRenderer.invoke('get-system-status');
+  },
+  openSettings: (setting: string) => {
+    return ipcRenderer.invoke('open-settings', setting);
   },
   onToggleSuperHide: (callback: () => void) => {
     const listener = () => callback();

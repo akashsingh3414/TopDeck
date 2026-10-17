@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
@@ -226,6 +226,8 @@ function createWindow() {
     }
   });
 
+  let leaveGraceTimer: NodeJS.Timeout | null = null;
+
   // Smooth hit-testing loop to guarantee click-through outside the pill
   hitTestInterval = setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -248,18 +250,31 @@ function createWindow() {
       cursor.y <= winBounds.y + pillBoundsInScreen.y + pillBoundsInScreen.height
     );
 
-    if (inside !== isMouseInsidePill) {
-      isMouseInsidePill = inside;
-      if (inside) {
+    if (inside) {
+      if (leaveGraceTimer) {
+        clearTimeout(leaveGraceTimer);
+        leaveGraceTimer = null;
+      }
+      if (!isMouseInsidePill) {
+        isMouseInsidePill = true;
         mainWindow.setIgnoreMouseEvents(false);
-      } else {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      }
+    } else {
+      if (isMouseInsidePill && !leaveGraceTimer) {
+        leaveGraceTimer = setTimeout(() => {
+          isMouseInsidePill = false;
+          leaveGraceTimer = null;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.setIgnoreMouseEvents(true, { forward: true });
+          }
+        }, 150);
       }
     }
   }, 40);
 
   mainWindow.on('closed', () => {
     if (hitTestInterval) clearInterval(hitTestInterval);
+    if (leaveGraceTimer) clearTimeout(leaveGraceTimer);
     mainWindow = null;
   });
 }
@@ -293,6 +308,21 @@ ipcMain.handle('media-command', async (_event, command: string) => {
     }
   }
   return false;
+});
+
+ipcMain.handle('open-settings', async (_event, setting: string) => {
+  const map: Record<string, string> = {
+    wifi: 'ms-settings:network-wifi',
+    bluetooth: 'ms-settings:bluetooth',
+    battery: 'ms-settings:batterysaver',
+  };
+  const target = map[setting] || `ms-settings:${setting}`;
+  try {
+    await shell.openExternal(target);
+    return true;
+  } catch {
+    return false;
+  }
 });
 
 ipcMain.handle('get-system-status', async () => {

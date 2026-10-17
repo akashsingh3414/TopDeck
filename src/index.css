@@ -4,8 +4,8 @@
 
 :root {
   color-scheme: dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, system-ui, sans-serif;
-  font-feature-settings: 'tnum', 'cv02', 'cv03', 'cv04';
+  font-family: "Segoe UI Variable Text", "Segoe UI", Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: #F5F5F7;
 }
 
 * {
@@ -41,5 +41,14 @@ html, body {
   100% {
     transform: scaleY(0.35);
     opacity: 0.7;
+  }
+}
+
+@keyframes vinylSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }

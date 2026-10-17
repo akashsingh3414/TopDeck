@@ -15,6 +15,14 @@ export interface MediaTrack {
   appTitle?: string;
 }
 
+export interface RadiosInfo {
+  wifiEnabled: boolean;
+  wifiConnected: boolean;
+  wifiSsid: string;
+  wifiSignal: number;
+  btEnabled: boolean;
+}
+
 export interface IslandDimensions {
   width: number;
   height: number;
@@ -28,13 +36,13 @@ export const STATE_DIMENSIONS: Record<IslandState, IslandDimensions> = {
     bottomRadius: 20,
   },
   peek: {
-    width: 300,
-    height: 42,
-    bottomRadius: 24,
+    width: 320,
+    height: 44,
+    bottomRadius: 22,
   },
   expanded: {
-    width: 440,
-    height: 168,
-    bottomRadius: 28,
+    width: 460,
+    height: 200,
+    bottomRadius: 32,
   },
 };

@@ -13,6 +13,7 @@ declare global {
       sendMediaCommand: (command: string) => Promise<boolean>;
       getSystemStatus: () => Promise<any>;
       onToggleSuperHide?: (callback: () => void) => () => void;
+      openSettings?: (setting: string) => Promise<boolean>;
     };
   }
 }

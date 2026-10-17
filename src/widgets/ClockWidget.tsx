@@ -1,50 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import { IslandWidget } from './types';
-import { Calendar, Clock, Battery, BatteryCharging, BatteryWarning } from 'lucide-react';
+import {
+  Battery,
+  BatteryCharging,
+  BatteryWarning,
+  Wifi,
+  WifiOff,
+  Bluetooth,
+  BluetoothOff,
+} from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
+import { SectionLabel } from '../components/ui';
 
-export const ClockIdle: React.FC = () => {
-  const [time, setTime] = useState<string>('');
-  const battery = useIslandStore((s) => s.battery);
-
+const useNow = () => {
+  const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      setTime(
-        now.toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })
-      );
-    };
-    update();
-    const interval = setInterval(update, 1000);
+    const interval = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(interval);
   }, []);
+  return now;
+};
 
+const BatteryGlyph: React.FC<{ percent: number; isCharging: boolean; className?: string }> = ({
+  percent,
+  isCharging,
+  className = 'w-4 h-4',
+}) => {
+  if (isCharging) return <BatteryCharging className={`${className} text-ok`} />;
+  if (percent <= 20) return <BatteryWarning className={`${className} text-danger`} />;
+  return <Battery className={`${className} text-ink-muted`} />;
+};
+
+export const ClockIdle: React.FC = () => {
+  const now = useNow();
+  const battery = useIslandStore((s) => s.battery);
   const isLow = battery.percent <= 20 && !battery.isCharging;
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
   return (
-    <div className="flex items-center justify-between w-full px-3 h-full select-none text-white font-medium">
-      {/* Time */}
-      <div className="flex items-center space-x-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse" />
-        <span className="text-[12px] tracking-tight font-semibold text-white/95 tabular-nums">
-          {time || '12:00'}
-        </span>
-      </div>
-
-      {/* Clean inline battery indicator */}
-      <div className="flex items-center space-x-1">
-        {battery.isCharging ? (
-          <BatteryCharging className="w-3.5 h-3.5 text-emerald-400" />
-        ) : isLow ? (
-          <BatteryWarning className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
-        ) : (
-          <Battery className="w-3.5 h-3.5 text-neutral-400" />
-        )}
-        <span className={`text-[10px] font-medium tabular-nums ${isLow ? 'text-rose-400' : 'text-neutral-300'}`}>
+    <div className="flex items-center justify-between w-full h-full px-4 select-none">
+      <span className="text-[13px] font-semibold tracking-tight text-ink tabular-nums">{time}</span>
+      <div className="flex items-center gap-1">
+        <BatteryGlyph percent={battery.percent} isCharging={battery.isCharging} className="w-3.5 h-3.5" />
+        <span className={`text-caption font-medium tabular-nums ${isLow ? 'text-danger' : 'text-ink-muted'}`}>
           {battery.percent}%
         </span>
       </div>
@@ -53,100 +51,133 @@ export const ClockIdle: React.FC = () => {
 };
 
 export const ClockPeek: React.FC = () => {
-  const [dateTime, setDateTime] = useState({ time: '', date: '' });
+  const now = useNow();
   const battery = useIslandStore((s) => s.battery);
+  const radios = useIslandStore((s) => s.radios);
 
-  useEffect(() => {
-    const update = () => {
-      const now = new Date();
-      setDateTime({
-        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        date: now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
-      });
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const isLow = battery.percent <= 20 && !battery.isCharging;
+  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
 
   return (
-    <div className="flex items-center justify-between w-full px-4 h-full select-none text-white">
-      <div className="flex items-center space-x-2">
-        <Clock className="w-4 h-4 text-neutral-300" />
-        <span className="text-[13px] font-semibold tracking-tight text-white tabular-nums">{dateTime.time}</span>
-        <span className="text-white/20">•</span>
-        <span className="text-[11px] text-neutral-400 font-medium">{dateTime.date}</span>
+    <div className="flex items-center justify-between w-full h-full px-5 select-none">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[14px] font-semibold tracking-tight text-ink tabular-nums">{time}</span>
+        <span className="text-caption text-ink-muted">{date}</span>
       </div>
 
-      {/* Clean inline battery */}
-      <div className="flex items-center space-x-1 text-xs">
-        {battery.isCharging ? (
-          <BatteryCharging className="w-4 h-4 text-emerald-400" />
-        ) : isLow ? (
-          <BatteryWarning className="w-4 h-4 text-rose-400 animate-pulse" />
+      <div className="flex items-center gap-2.5">
+        {radios.wifiEnabled ? (
+          <Wifi className={`w-3.5 h-3.5 ${radios.wifiConnected ? 'text-ink' : 'text-ink-faint'}`} />
         ) : (
-          <Battery className="w-4 h-4 text-neutral-300" />
+          <WifiOff className="w-3.5 h-3.5 text-ink-faint" />
         )}
-        <span className="font-medium text-neutral-200 tabular-nums">{battery.percent}%</span>
+        {radios.btEnabled ? (
+          <Bluetooth className="w-3.5 h-3.5 text-ink" />
+        ) : (
+          <BluetoothOff className="w-3.5 h-3.5 text-ink-faint" />
+        )}
+        <div className="flex items-center gap-1">
+          <BatteryGlyph percent={battery.percent} isCharging={battery.isCharging} />
+          <span className="text-caption font-medium text-ink tabular-nums">{battery.percent}%</span>
+        </div>
       </div>
     </div>
   );
 };
 
+// iOS Control Center style toggle row: round icon + label + status
+const ToggleTile: React.FC<{
+  on: boolean;
+  label: string;
+  status: string;
+  title: string;
+  icon: React.ReactNode;
+  onToggle: () => void;
+}> = ({ on, label, status, title, icon, onToggle }) => (
+  <button
+    type="button"
+    title={title}
+    onClick={(e) => {
+      e.stopPropagation();
+      onToggle();
+    }}
+    className="flex items-center gap-2.5 w-full h-11 pl-1.5 pr-3 rounded-2xl bg-white/[0.06] hover:bg-white/[0.1] transition-colors duration-150 active:scale-[0.98] text-left"
+  >
+    <span
+      className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center transition-colors duration-150 ${on ? 'bg-accent text-white' : 'bg-white/[0.1] text-ink-muted'
+        }`}
+    >
+      {icon}
+    </span>
+    <span className="flex flex-col min-w-0 leading-tight">
+      <span className="text-[12px] font-semibold text-ink">{label}</span>
+      <span className="text-caption text-ink-muted truncate">{status}</span>
+    </span>
+  </button>
+);
+
 export const ClockExpanded: React.FC = () => {
-  const [now, setNow] = useState(new Date());
+  const now = useNow();
   const battery = useIslandStore((s) => s.battery);
+  const radios = useIslandStore((s) => s.radios);
 
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateStr = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const hhmm = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const seconds = now.getSeconds().toString().padStart(2, '0');
+  const weekday = now.toLocaleDateString([], { weekday: 'long' });
+  const date = now.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' });
   const isLow = battery.percent <= 20 && !battery.isCharging;
 
+  const toggleRadio = (type: 'WIFI' | 'BT') => {
+    window.islandAPI?.sendMediaCommand(type === 'WIFI' ? 'TOGGLE_WIFI' : 'TOGGLE_BT');
+  };
+
+  const wifiStatus = radios.wifiConnected ? radios.wifiSsid : radios.wifiEnabled ? 'Not connected' : 'Off';
+
   return (
-    <div className="flex flex-col justify-between w-full h-full p-4 select-none text-white bg-black">
-      {/* Top section: Clock & Full Date */}
-      <div className="flex flex-col text-left pr-28">
-        <div className="flex items-center space-x-1.5 mb-1">
-          <Clock className="w-3.5 h-3.5 text-neutral-400" />
-          <span className="text-[10px] font-medium tracking-wider text-neutral-400 uppercase">
-            System & Calendar
-          </span>
+    <div className="flex w-full h-full px-5 pb-4 pt-1 gap-4 select-none">
+      {/* Left: time, date, battery */}
+      <div className="flex flex-col justify-between flex-1 min-w-0">
+        <div className="flex flex-col">
+          <SectionLabel>{weekday}</SectionLabel>
+          <div className="flex items-baseline mt-1">
+            <span className="text-[40px] font-semibold tracking-tight text-ink tabular-nums leading-none">
+              {hhmm}
+            </span>
+            <span className="ml-1.5 text-[15px] font-medium text-ink-faint tabular-nums">{seconds}</span>
+          </div>
+          <span className="text-[12px] text-ink-muted mt-1.5 truncate">{date}</span>
         </div>
-        <div className="text-3xl font-bold tracking-tight text-white tabular-nums leading-none my-1">
-          {timeStr}
-        </div>
-        <div className="text-xs text-neutral-400 mt-1 flex items-center space-x-1.5">
-          <Calendar className="w-3.5 h-3.5 text-neutral-500" />
-          <span>{dateStr}</span>
+
+        <div className="flex items-center gap-2">
+          <BatteryGlyph percent={battery.percent} isCharging={battery.isCharging} />
+          <div className="flex-1 h-1 rounded-full bg-white/[0.1] overflow-hidden">
+            <div
+              className={`h-full rounded-full ${battery.isCharging ? 'bg-ok' : isLow ? 'bg-danger' : 'bg-ink'}`}
+              style={{ width: `${battery.percent}%` }}
+            />
+          </div>
+          <span className="text-caption font-medium text-ink tabular-nums w-9 text-right">{battery.percent}%</span>
         </div>
       </div>
 
-      {/* Bottom status row: Clean battery display */}
-      <div className="pt-2 border-t border-white/[0.08] flex items-center justify-between text-xs text-neutral-400">
-        <span className="text-[10px] text-neutral-500 font-medium tracking-wide uppercase">
-          TopDeck
-        </span>
-
-        {/* Clean inline battery indicator */}
-        <div className="flex items-center space-x-1.5">
-          {battery.isCharging ? (
-            <BatteryCharging className="w-4 h-4 text-emerald-400" />
-          ) : isLow ? (
-            <BatteryWarning className="w-4 h-4 text-rose-400 animate-pulse" />
-          ) : (
-            <Battery className="w-4 h-4 text-neutral-300" />
-          )}
-          <span className="font-medium text-white/90 tabular-nums">{battery.percent}%</span>
-          <span className="text-[10px] text-neutral-400">
-            {battery.isCharging ? '• Charging' : '• Battery'}
-          </span>
-        </div>
+      {/* Right: quick toggles */}
+      <div className="flex flex-col justify-center gap-2 w-[176px] flex-shrink-0">
+        <ToggleTile
+          on={radios.wifiEnabled}
+          label="Wi-Fi"
+          status={wifiStatus}
+          title={radios.wifiConnected ? `Wi-Fi: ${radios.wifiSsid} (${radios.wifiSignal}%)` : `Wi-Fi: ${wifiStatus}`}
+          icon={radios.wifiEnabled ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+          onToggle={() => toggleRadio('WIFI')}
+        />
+        <ToggleTile
+          on={radios.btEnabled}
+          label="Bluetooth"
+          status={radios.btEnabled ? 'On' : 'Off'}
+          title={`Bluetooth: ${radios.btEnabled ? 'On' : 'Off'}`}
+          icon={radios.btEnabled ? <Bluetooth className="w-4 h-4" /> : <BluetoothOff className="w-4 h-4" />}
+          onToggle={() => toggleRadio('BT')}
+        />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { IslandState, WidgetType, MediaTrack, WIDGET_ORDER } from '../types/island';
+import { IslandState, WidgetType, MediaTrack, RadiosInfo, WIDGET_ORDER } from '../types/island';
 
 export interface BatteryInfo {
   percent: number;
@@ -21,6 +21,7 @@ interface IslandStore {
   // Widget States
   media: MediaTrack;
   battery: BatteryInfo;
+  radios: RadiosInfo;
 
   // Actions
   setState: (state: IslandState) => void;
@@ -37,6 +38,7 @@ interface IslandStore {
   cancelCollapse: () => void;
   updateMedia: (media: Partial<MediaTrack>) => void;
   updateBattery: (battery: Partial<BatteryInfo>) => void;
+  updateRadios: (radios: Partial<RadiosInfo>) => void;
   tickMediaPosition: () => void;
 }
 
@@ -72,6 +74,14 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     percent: 100,
     isCharging: false,
     status: 'Online',
+  },
+
+  radios: {
+    wifiEnabled: true,
+    wifiConnected: false,
+    wifiSsid: '',
+    wifiSignal: 0,
+    btEnabled: true,
   },
 
   setState: (state) => set({ state }),
@@ -199,8 +209,10 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     const { hasUserSelectedTab, activeWidget } = get();
 
     // Preserve existing thumbnail if current update didn't include one but song is same.
-    // When a new track starts, if updated.albumArt is not provided yet, clear it so previous song's thumbnail never leaks!
-    const albumArt = updated.albumArt ? updated.albumArt : (isNewTrack ? '' : current.albumArt);
+    // When a new track starts, if updated.albumArt is not provided, strictly clear it so previous song's thumbnail never leaks!
+    const albumArt = isNewTrack
+      ? (updated.albumArt || '')
+      : (updated.albumArt !== undefined ? updated.albumArt : current.albumArt);
 
     // Only auto-switch to media if user has NOT explicitly picked another tab
     let nextActive = activeWidget;
@@ -211,12 +223,13 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     }
 
     set((s) => ({
-      media: { ...s.media, ...updated, albumArt },
+      media: { ...s.media, ...updated, albumArt, isPlaying },
       activeWidget: nextActive,
     }));
 
-    // Peek on track change only if user hasn't pinned island
-    if (isNewTrack && updated.title && !get().pinned) {
+    // Peek on track change ONLY IF music/video is actually playing!
+    // Never peek or pop up music on install/startup if paused or stopped!
+    if (isNewTrack && isPlaying && updated.title && !get().pinned) {
       get().peekWidget('media', 3000);
     }
   },
@@ -224,15 +237,23 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
   updateBattery: (updated) => {
     const current = get().battery;
     const pluggedChanged = updated.isCharging !== undefined && updated.isCharging !== current.isCharging;
-    const isLow = updated.percent !== undefined && updated.percent <= 20 && !updated.isCharging;
+    const wasLow = current.percent <= 20 && !current.isCharging;
+    const isNowLow = (updated.percent ?? current.percent) <= 20 && !(updated.isCharging ?? current.isCharging);
+    const justBecameLow = !wasLow && isNowLow;
 
     set((s) => ({
       battery: { ...s.battery, ...updated },
     }));
 
-    if (pluggedChanged || isLow) {
+    if (pluggedChanged || justBecameLow) {
       get().peekWidget('clock', 3000);
     }
+  },
+
+  updateRadios: (updated) => {
+    set((s) => ({
+      radios: { ...s.radios, ...updated },
+    }));
   },
 
   tickMediaPosition: () => {

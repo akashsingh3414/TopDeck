@@ -2,6 +2,7 @@ import React from 'react';
 import { IslandWidget } from './types';
 import { Timer, Play, Pause, RotateCcw, Bell } from 'lucide-react';
 import { create } from 'zustand';
+import { Chip, IconButton, SectionLabel, formatDuration } from '../components/ui';
 
 interface TimerStore {
   isRunning: boolean;
@@ -63,25 +64,21 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   },
 }));
 
+const PRESETS = [
+  { label: '1m', seconds: 60 },
+  { label: '5m', seconds: 300 },
+  { label: '15m', seconds: 900 },
+  { label: '25m', seconds: 1500 },
+];
+
 export const TimerIdle: React.FC = () => {
   const { timeLeft, isFinished } = useTimerStore();
 
-  const format = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
   return (
-    <div className="flex items-center justify-between w-full px-3 h-full select-none text-white font-medium">
-      <div className="flex items-center space-x-1.5">
-        <Timer className="w-3.5 h-3.5 text-[#FF9F0A]" />
-        <span className={`text-[12px] font-semibold tabular-nums ${isFinished ? 'text-[#FF9F0A]' : 'text-white/95'}`}>
-          {isFinished ? 'Done' : format(timeLeft)}
-        </span>
-      </div>
-      <span className="text-[9px] font-semibold tracking-wider uppercase text-[#FF9F0A] px-1.5 py-0.5 rounded bg-[#FF9F0A]/15 border border-[#FF9F0A]/30">
-        TIMER
+    <div className="flex items-center justify-between w-full h-full px-4 select-none">
+      <Timer className={`w-3.5 h-3.5 ${isFinished ? 'text-warn' : 'text-accent'}`} />
+      <span className={`text-[13px] font-semibold tabular-nums ${isFinished ? 'text-warn' : 'text-ink'}`}>
+        {isFinished ? 'Done' : formatDuration(timeLeft)}
       </span>
     </div>
   );
@@ -90,115 +87,98 @@ export const TimerIdle: React.FC = () => {
 export const TimerPeek: React.FC = () => {
   const { isFinished, timeLeft } = useTimerStore();
 
-  const format = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+  return (
+    <div className="flex items-center justify-between w-full h-full px-5 select-none">
+      <div className="flex items-center gap-2">
+        <Bell className={`w-4 h-4 ${isFinished ? 'text-warn' : 'text-accent'}`} />
+        <span className="text-[13px] font-semibold text-ink">{isFinished ? "Time's up" : 'Timer running'}</span>
+      </div>
+      <span className="text-[13px] font-semibold text-ink tabular-nums">{formatDuration(timeLeft)}</span>
+    </div>
+  );
+};
+
+const RING_SIZE = 124;
+const RING_STROKE = 6;
+
+const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: React.ReactNode }> = ({
+  fraction,
+  finished,
+  children,
+}) => {
+  const r = (RING_SIZE - RING_STROKE) / 2;
+  const circumference = 2 * Math.PI * r;
 
   return (
-    <div className="flex items-center justify-between w-full px-4 h-full select-none text-white">
-      <div className="flex items-center space-x-2">
-        <Bell className="w-4 h-4 text-[#FF9F0A]" />
-        <span className="text-[13px] font-semibold text-white tracking-tight">
-          {isFinished ? 'Timer Completed' : 'Timer Running'}
-        </span>
-      </div>
-      <span className="text-[12px] font-semibold text-[#FF9F0A] tabular-nums">
-        {format(timeLeft)}
-      </span>
+    <div className="relative flex-shrink-0" style={{ width: RING_SIZE, height: RING_SIZE }}>
+      <svg width={RING_SIZE} height={RING_SIZE} className="-rotate-90">
+        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={r} fill="none" strokeWidth={RING_STROKE} className="stroke-white/[0.1]" />
+        <circle
+          cx={RING_SIZE / 2}
+          cy={RING_SIZE / 2}
+          r={r}
+          fill="none"
+          strokeWidth={RING_STROKE}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - fraction)}
+          className={`${finished ? 'stroke-warn' : 'stroke-accent'} transition-[stroke-dashoffset] duration-1000 ease-linear`}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
     </div>
   );
 };
 
 export const TimerExpanded: React.FC = () => {
-  const { isRunning, timeLeft, totalTime, isFinished, start, pause, resume, reset } = useTimerStore();
+  const { isRunning, isFinished, timeLeft, totalTime, start, pause, resume, reset } = useTimerStore();
 
-  const format = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
+  // Ring drains as time runs out; full when idle so it reads as "ready"
+  const fraction = totalTime > 0 ? timeLeft / totalTime : isFinished ? 0 : 1;
+  const status = isFinished ? "Time's up" : isRunning ? 'Focusing' : timeLeft > 0 ? 'Paused' : 'Ready';
 
   return (
-    <div className="flex flex-col justify-between w-full h-full p-4 select-none text-white bg-black">
-      <div className="flex items-center justify-between pr-28">
-        <div className="flex items-center space-x-2">
-          <div className="w-7 h-7 rounded-full bg-[#FF9F0A]/15 border border-[#FF9F0A]/30 flex items-center justify-center text-[#FF9F0A]">
-            <Timer className="w-3.5 h-3.5" />
-          </div>
-          <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-wider">
-            Focus Timer
-          </span>
-        </div>
-
-        <span className="text-2xl font-bold text-white tracking-tight tabular-nums">
-          {format(timeLeft)}
+    <div className="flex w-full h-full px-5 pb-4 pt-1 gap-5 select-none">
+      <ProgressRing fraction={fraction} finished={isFinished}>
+        <span className="text-[26px] font-semibold tracking-tight text-ink tabular-nums leading-none">
+          {formatDuration(timeLeft)}
         </span>
-      </div>
+        <span className={`text-micro font-semibold uppercase mt-1.5 ${isFinished ? 'text-warn' : 'text-ink-faint'}`}>
+          {status}
+        </span>
+      </ProgressRing>
 
-      {/* Apple-style Progress bar */}
-      {totalTime > 0 && (
-        <div className="w-full bg-white/[0.08] h-1 rounded-full overflow-hidden my-2">
-          <div
-            className="h-full bg-[#FF9F0A] transition-all duration-300"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      )}
-
-      {/* Presets and controls */}
-      <div className="flex items-center justify-between mt-1 pt-2 border-t border-white/[0.08]">
-        <div className="flex items-center space-x-1.5">
-          <button
-            onClick={() => start(60)}
-            className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-white/80 hover:text-white border border-white/[0.08] transition-all"
-          >
-            1m
-          </button>
-          <button
-            onClick={() => start(300)}
-            className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-white/80 hover:text-white border border-white/[0.08] transition-all"
-          >
-            5m
-          </button>
-          <button
-            onClick={() => start(1500)}
-            className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-white/80 hover:text-white border border-white/[0.08] transition-all"
-          >
-            25m
-          </button>
+      <div className="flex flex-col justify-between flex-1 min-w-0 py-1">
+        <div className="flex flex-col gap-2">
+          <SectionLabel>Focus Timer</SectionLabel>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map((p) => (
+              <Chip key={p.seconds} active={totalTime === p.seconds} onClick={() => start(p.seconds)}>
+                {p.label}
+              </Chip>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
           {isRunning ? (
-            <button
-              onClick={pause}
-              className="p-1.5 rounded-full bg-[#FF9F0A] text-black hover:bg-[#FFB340] transition-transform active:scale-90 shadow-md font-bold"
-              title="Pause"
+            <IconButton title="Pause" variant="on" size="lg" onClick={pause}>
+              <Pause className="fill-current" />
+            </IconButton>
+          ) : (
+            <IconButton
+              title={timeLeft > 0 ? 'Resume' : 'Start 25 minutes'}
+              variant="on"
+              size="lg"
+              onClick={() => (timeLeft > 0 ? resume() : start(1500))}
             >
-              <Pause className="w-3.5 h-3.5 fill-black text-black" />
-            </button>
-          ) : timeLeft > 0 ? (
-            <button
-              onClick={resume}
-              className="p-1.5 rounded-full bg-[#FF9F0A] text-black hover:bg-[#FFB340] transition-transform active:scale-90 shadow-md font-bold"
-              title="Start"
-            >
-              <Play className="w-3.5 h-3.5 fill-black text-black translate-x-0.5" />
-            </button>
-          ) : null}
-
+              <Play className="fill-current translate-x-px" />
+            </IconButton>
+          )}
           {totalTime > 0 && (
-            <button
-              onClick={reset}
-              className="p-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-white/80 hover:text-white border border-white/[0.08] transition-transform active:scale-90"
-              title="Reset"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
+            <IconButton title="Reset" onClick={reset}>
+              <RotateCcw />
+            </IconButton>
           )}
         </div>
       </div>

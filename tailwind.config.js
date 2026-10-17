@@ -17,24 +17,24 @@ export default {
           'sans-serif',
         ],
       },
+      // TopDeck theme: pure black island, one accent, semantic status colors only
       colors: {
-        island: {
-          bg: '#000000',
-          pill: '#000000',
-          card: '#121212',
-          subtle: '#262626',
-          muted: '#8e8e93',
-          border: 'rgba(255, 255, 255, 0.12)',
+        ink: {
+          DEFAULT: '#F5F5F7',
+          muted: '#98989D',
+          faint: '#636366',
         },
+        accent: {
+          DEFAULT: '#0A84FF',
+          hover: '#409CFF',
+        },
+        ok: '#30D158',
+        warn: '#FF9F0A',
+        danger: '#FF453A',
       },
-      boxShadow: {
-        'island': '0 12px 36px rgba(0, 0, 0, 0.65), 0 0 1px 1px rgba(255, 255, 255, 0.08)',
-        'island-glow': '0 0 24px rgba(255, 255, 255, 0.06)',
-      },
-      borderRadius: {
-        'island-idle': '20px',
-        'island-peek': '24px',
-        'island-expanded': '32px',
+      fontSize: {
+        micro: ['10px', { lineHeight: '12px', letterSpacing: '0.04em' }],
+        caption: ['11px', { lineHeight: '14px' }],
       },
     },
   },
