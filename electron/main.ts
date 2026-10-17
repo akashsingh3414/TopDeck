@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
@@ -10,6 +10,11 @@ let helperRestartTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
 
 let pillBoundsInScreen = { x: 0, y: 0, width: 0, height: 0 };
+
+// Windows only shows toast notifications for an app with an AppUserModelID (matches build.appId)
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.topdeck.windows');
+}
 let isMouseInsidePill = false;
 let hitTestInterval: NodeJS.Timeout | null = null;
 
@@ -323,6 +328,13 @@ ipcMain.handle('open-settings', async (_event, setting: string) => {
   } catch {
     return false;
   }
+});
+
+ipcMain.handle('notify', async (_event, title: string, body: string) => {
+  if (!Notification.isSupported()) return false;
+  // Silent: the renderer plays its own chime so the sound is the same whether or not toasts are enabled
+  new Notification({ title, body, silent: true }).show();
+  return true;
 });
 
 ipcMain.handle('get-system-status', async () => {

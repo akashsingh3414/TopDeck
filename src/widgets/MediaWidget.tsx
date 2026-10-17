@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { IslandWidget } from './types';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
@@ -122,10 +122,13 @@ export const MediaPeek: React.FC = () => {
 
 export const MediaExpanded: React.FC = () => {
   const media = useIslandStore((s) => s.media);
-  const [isMuted, setIsMuted] = useState(false);
+  // Real system mute state reported by the native helper
+  const isMuted = useIslandStore((s) => s.audio.muted);
+  const updateAudio = useIslandStore((s) => s.updateAudio);
 
   const send = (cmd: string) => {
-    if (cmd === 'MUTE') setIsMuted((prev) => !prev);
+    // Optimistic flip; the helper echoes the actual state right after applying it
+    if (cmd === 'MUTE') updateAudio({ muted: !isMuted });
     window.islandAPI?.sendMediaCommand(cmd);
   };
 

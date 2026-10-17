@@ -4,7 +4,7 @@ import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { ClockWidget } from '../widgets/ClockWidget';
 import { MediaWidget } from '../widgets/MediaWidget';
-import { TimerWidget, useTimerStore } from '../widgets/TimerWidget';
+import { TimerWidget, useTimerStore, playChime } from '../widgets/TimerWidget';
 import {
   Clock,
   Music,
@@ -16,7 +16,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { IconButton } from './ui';
+import { IconButton, formatDuration } from './ui';
 
 const TABS: { id: WidgetType; label: string; title: string; Icon: typeof Clock }[] = [
   { id: 'clock', label: 'System', title: 'System (Clock, Wi-Fi, Bluetooth & Battery)', Icon: Clock },
@@ -83,6 +83,9 @@ export const DynamicIsland: React.FC = () => {
     updateMedia,
     updateBattery,
     updateRadios,
+    updateAudio,
+    setWifiNetworks,
+    setBtDevices,
     media,
     hasUserSelectedTab,
   } = useIslandStore();
@@ -115,10 +118,13 @@ export const DynamicIsland: React.FC = () => {
     return () => clearInterval(interval);
   }, [timerRunning, timerTick]);
 
-  // Peek on timer finished (rising edge only)
+  // Timer finished (rising edge only): sticky peek until the user hovers, plus chime and toast
   useEffect(() => {
     if (timerFinished && !prevTimerFinishedRef.current) {
-      peekWidget('timer', 4000);
+      peekWidget('timer', 0);
+      playChime();
+      const total = useTimerStore.getState().totalTime;
+      window.islandAPI?.notify?.("Time's up", `Your ${formatDuration(total)} focus timer has finished.`);
     }
     prevTimerFinishedRef.current = timerFinished;
   }, [timerFinished, peekWidget]);
@@ -185,6 +191,15 @@ export const DynamicIsland: React.FC = () => {
           wifiSignal: data.wifiSignal || 0,
           btEnabled: !!data.btEnabled,
         });
+      } else if (data.type === 'audio') {
+        updateAudio({
+          muted: !!data.muted,
+          volume: typeof data.volume === 'number' ? data.volume : -1,
+        });
+      } else if (data.type === 'wifiList') {
+        setWifiNetworks(Array.isArray(data.networks) ? data.networks : []);
+      } else if (data.type === 'btList') {
+        setBtDevices(Array.isArray(data.devices) ? data.devices : []);
       } else if (data.type === 'fullscreen') {
         setFullscreenHidden(!!data.isFullscreen);
       }
@@ -193,12 +208,15 @@ export const DynamicIsland: React.FC = () => {
     return () => {
       cleanup();
     };
-  }, [updateMedia, updateBattery, updateRadios, setFullscreenHidden]);
+  }, [updateMedia, updateBattery, updateRadios, updateAudio, setWifiNetworks, setBtDevices, setFullscreenHidden]);
 
-  // Report pill bounding rect to Electron main process for hit testing
+  // Report pill bounding rect to Electron main process for hit testing.
+  // The pill is centered in the window, so x is derived from the window's real width
+  // rather than a copy of electron/main.ts WINDOW_WIDTH.
   useEffect(() => {
     const updateBounds = () => {
       if (window.islandAPI) {
+        const windowWidth = window.innerWidth;
         if (isFullscreenHidden) {
           window.islandAPI.updatePillBounds({ x: 0, y: 0, width: 0, height: 0 });
           return;
@@ -206,7 +224,7 @@ export const DynamicIsland: React.FC = () => {
 
         if (!isVisible) {
           // In super-hide mode: wide top-edge trigger zone at top center
-          const centerX = Math.round((560 - SUPER_HIDE_WIDTH) / 2);
+          const centerX = Math.round((windowWidth - SUPER_HIDE_WIDTH) / 2);
           window.islandAPI.updatePillBounds({
             x: centerX,
             y: 0,
@@ -219,7 +237,7 @@ export const DynamicIsland: React.FC = () => {
         // Send target bounds for state immediately so Electron's hit-testing loop
         // never drops mouse capture while the spring animation is running!
         const dim = STATE_DIMENSIONS[state];
-        const targetX = Math.round((560 - dim.width) / 2);
+        const targetX = Math.round((windowWidth - dim.width) / 2);
         window.islandAPI.updatePillBounds({
           x: targetX,
           y: 0,
@@ -230,6 +248,8 @@ export const DynamicIsland: React.FC = () => {
     };
 
     updateBounds();
+    window.addEventListener('resize', updateBounds);
+    return () => window.removeEventListener('resize', updateBounds);
   }, [state, isFullscreenHidden, isVisible]);
 
   if (isFullscreenHidden) {
@@ -259,11 +279,11 @@ export const DynamicIsland: React.FC = () => {
     }
   };
 
+  // Clicking only ever opens the island; it closes when the pointer leaves, so a
+  // near-miss on a control can't collapse it
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (state === 'expanded') {
-      collapse(0);
-    } else {
+    if (state !== 'expanded') {
       expand();
     }
   };
@@ -417,7 +437,7 @@ export const DynamicIsland: React.FC = () => {
           borderBottomRightRadius: targetBottomRadius,
         }}
         transition={islandSpring}
-        className="relative bg-black text-white cursor-pointer pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center"
+        className={`relative bg-black text-white ${state === 'expanded' ? 'cursor-default' : 'cursor-pointer'} pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center`}
         style={{
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,

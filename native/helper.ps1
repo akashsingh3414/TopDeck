@@ -86,6 +86,82 @@ public class Win32Helper {
     }
 }
 
+// Core Audio (default render endpoint) for reading and setting the real system mute state
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+internal class MMDeviceEnumeratorCom {}
+
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceEnumerator {
+    int NotImpl_EnumAudioEndpoints();
+    [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+}
+
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDevice {
+    [PreserveSig] int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}
+
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioEndpointVolume {
+    int NotImpl_RegisterControlChangeNotify();
+    int NotImpl_UnregisterControlChangeNotify();
+    int NotImpl_GetChannelCount();
+    int NotImpl_SetMasterVolumeLevel();
+    int NotImpl_SetMasterVolumeLevelScalar();
+    int NotImpl_GetMasterVolumeLevel();
+    [PreserveSig] int GetMasterVolumeLevelScalar(out float pfLevel);
+    int NotImpl_SetChannelVolumeLevel();
+    int NotImpl_SetChannelVolumeLevelScalar();
+    int NotImpl_GetChannelVolumeLevel();
+    int NotImpl_GetChannelVolumeLevelScalar();
+    [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
+    [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+}
+
+public static class AudioHelper {
+    // Re-resolved on every call so switching output devices is picked up
+    private static IAudioEndpointVolume GetEndpoint() {
+        try {
+            var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorCom());
+            IMMDevice device;
+            // eRender = 0, eMultimedia = 1
+            if (enumerator.GetDefaultAudioEndpoint(0, 1, out device) != 0 || device == null) return null;
+            Guid iid = typeof(IAudioEndpointVolume).GUID;
+            object o;
+            // CLSCTX_ALL = 23
+            if (device.Activate(ref iid, 23, IntPtr.Zero, out o) != 0) return null;
+            return o as IAudioEndpointVolume;
+        } catch {
+            return null;
+        }
+    }
+
+    // Returns 1 = muted, 0 = unmuted, -1 = unavailable
+    public static int GetMute() {
+        var ep = GetEndpoint();
+        if (ep == null) return -1;
+        bool muted;
+        if (ep.GetMute(out muted) != 0) return -1;
+        return muted ? 1 : 0;
+    }
+
+    // Returns 0-100, or -1 when unavailable
+    public static int GetVolume() {
+        var ep = GetEndpoint();
+        if (ep == null) return -1;
+        float level;
+        if (ep.GetMasterVolumeLevelScalar(out level) != 0) return -1;
+        return (int)Math.Round(level * 100);
+    }
+
+    public static bool SetMute(bool mute) {
+        var ep = GetEndpoint();
+        if (ep == null) return false;
+        Guid ctx = Guid.Empty;
+        return ep.SetMute(mute, ref ctx) == 0;
+    }
+}
+
 public static class StdinListener {
     public static readonly ConcurrentQueue<string> Commands = new ConcurrentQueue<string>();
     private static Thread _thread;
@@ -362,9 +438,116 @@ function Get-RadiosState {
     }
 }
 
+function Get-AudioState {
+    try {
+        $muted = [AudioHelper]::GetMute()
+        if ($muted -lt 0) { return $null }
+        return @{
+            type = "audio"
+            muted = ($muted -eq 1)
+            volume = [AudioHelper]::GetVolume()
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Get-WifiProfiles {
+    $names = @()
+    foreach ($line in (netsh wlan show profiles 2>$null)) {
+        if ($line -match 'All User Profile\s*:\s*(.+)$') { $names += $matches[1].Trim() }
+    }
+    return $names
+}
+
+# Nearby networks (what Windows last scanned), strongest first, deduped by SSID
+function Get-WifiList {
+    try {
+        $known = Get-WifiProfiles
+        $connected = (Get-RadiosState).wifiSsid
+        $networks = @{}
+        $current = $null
+        foreach ($line in (netsh wlan show networks mode=bssid 2>$null)) {
+            if ($line -match '^SSID \d+\s*:\s*(.*)$') {
+                $ssid = $matches[1].Trim()
+                $current = if ($ssid) { $ssid } else { $null }
+                if ($current -and -not $networks.ContainsKey($current)) {
+                    $networks[$current] = @{ ssid = $current; signal = 0; secured = $true }
+                }
+            } elseif ($current -and $line -match '^\s*Authentication\s*:\s*(.+)$') {
+                $networks[$current].secured = ($matches[1].Trim() -ne 'Open')
+            } elseif ($current -and $line -match '^\s*Signal\s*:\s*(\d+)%') {
+                $networks[$current].signal = [math]::Max($networks[$current].signal, [int]$matches[1])
+            }
+        }
+        if ($connected -and -not $networks.ContainsKey($connected)) {
+            $networks[$connected] = @{ ssid = $connected; signal = (Get-RadiosState).wifiSignal; secured = $true }
+        }
+        $list = @($networks.Values | ForEach-Object {
+            @{ ssid = $_.ssid; signal = $_.signal; secured = $_.secured; known = ($known -contains $_.ssid); connected = ($_.ssid -eq $connected) }
+        } | Sort-Object -Property @{ Expression = { $_.connected }; Descending = $true }, @{ Expression = { $_.signal }; Descending = $true })
+        return @{ type = "wifiList"; networks = $list }
+    } catch {
+        return @{ type = "wifiList"; networks = @() }
+    }
+}
+
+# Paired classic Bluetooth devices with their connection state
+function Get-BluetoothList {
+    try {
+        $devs = @(Get-PnpDevice -Class Bluetooth -ErrorAction SilentlyContinue | Where-Object { $_.InstanceId -like 'BTHENUM\DEV_*' })
+        $list = @()
+        if ($devs.Count -gt 0) {
+            # DEVPKEY_Device_IsConnected (one batched call for all devices)
+            $props = @(Get-PnpDeviceProperty -InstanceId ($devs | ForEach-Object { $_.InstanceId }) -KeyName '{83DA6326-97A6-4088-9453-A1923F573B29} 15' -ErrorAction SilentlyContinue)
+            foreach ($d in $devs) {
+                $p = $props | Where-Object { $_.InstanceId -eq $d.InstanceId } | Select-Object -First 1
+                $list += @{ name = $d.FriendlyName; connected = ($p -and $p.Data -eq $true) }
+            }
+        }
+        $list = @($list | Sort-Object -Property @{ Expression = { $_.connected }; Descending = $true }, @{ Expression = { $_.name } })
+        return @{ type = "btList"; devices = $list }
+    } catch {
+        return @{ type = "btList"; devices = @() }
+    }
+}
+
 function Execute-MediaCmd([string]$cmd) {
     $executed = $false
     $uCmd = $cmd.ToUpper().Trim()
+
+    if ($uCmd -eq "LIST_WIFI") {
+        [Console]::WriteLine((ConvertTo-Json (Get-WifiList) -Compress -Depth 4))
+        return
+    }
+
+    if ($uCmd -eq "LIST_BT") {
+        [Console]::WriteLine((ConvertTo-Json (Get-BluetoothList) -Compress -Depth 4))
+        return
+    }
+
+    # CONNECT_WIFI:<ssid> (case-sensitive SSID). Only saved networks; anything else goes to Settings.
+    if ($cmd.Trim() -match '^CONNECT_WIFI:(.+)$') {
+        $ssid = $matches[1]
+        if ((Get-WifiProfiles) -contains $ssid -and $ssid -notmatch '"') {
+            netsh wlan connect "name=$ssid" 2>$null | Out-Null
+            Start-Sleep -Milliseconds 1500
+        }
+        $rState = Get-RadiosState
+        if ($rState) { [Console]::WriteLine((ConvertTo-Json $rState -Compress)) }
+        [Console]::WriteLine((ConvertTo-Json (Get-WifiList) -Compress -Depth 4))
+        return
+    }
+
+    if ($uCmd -eq "MUTE") {
+        $current = [AudioHelper]::GetMute()
+        $ok = $false
+        if ($current -ge 0) { $ok = [AudioHelper]::SetMute($current -ne 1) }
+        if (-not $ok) { [Win32Helper]::SendMediaKey(0xAD) } # VK_VOLUME_MUTE fallback
+        $aState = Get-AudioState
+        if ($aState) { [Console]::WriteLine((ConvertTo-Json $aState -Compress)) }
+        return
+    }
 
     if ($uCmd -in @("TOGGLE_WIFI", "WIFI_TOGGLE")) {
         Refresh-Radios
@@ -433,7 +616,6 @@ function Execute-MediaCmd([string]$cmd) {
                 "TOGGLE"   { [Win32Helper]::SendMediaKey(0xB3) }
                 "NEXT"     { [Win32Helper]::SendMediaKey(0xB0) } # VK_MEDIA_NEXT_TRACK
                 "PREVIOUS" { [Win32Helper]::SendMediaKey(0xB1) } # VK_MEDIA_PREV_TRACK
-                "MUTE"     { [Win32Helper]::SendMediaKey(0xAD) } # VK_VOLUME_MUTE
             }
         } catch {}
     }
@@ -453,6 +635,11 @@ if ($initialRadios) {
     [Console]::WriteLine((ConvertTo-Json $initialRadios -Compress))
 }
 
+$initialAudio = Get-AudioState
+if ($initialAudio) {
+    [Console]::WriteLine((ConvertTo-Json $initialAudio -Compress))
+}
+
 # Main loop
 $lastTitle = ""
 $lastStatus = $false
@@ -465,6 +652,8 @@ $lastWifiEnabled = $null
 $lastWifiConnected = $null
 $lastWifiSsid = ""
 $lastBtEnabled = $null
+$lastMuted = if ($initialAudio) { $initialAudio.muted } else { $null }
+$lastVolume = if ($initialAudio) { $initialAudio.volume } else { $null }
 $loopCount = 0
 
 while ($true) {
@@ -498,6 +687,14 @@ while ($true) {
         if ($isFullscreen -ne $lastFullscreen) {
             $lastFullscreen = $isFullscreen
             [Console]::WriteLine((ConvertTo-Json @{ type = "fullscreen"; isFullscreen = $isFullscreen } -Compress))
+        }
+
+        # Catch mute/volume changes made outside TopDeck (keyboard keys, taskbar flyout)
+        $aState = Get-AudioState
+        if ($aState -and (($aState.muted -ne $lastMuted) -or ($aState.volume -ne $lastVolume))) {
+            $lastMuted = $aState.muted
+            $lastVolume = $aState.volume
+            [Console]::WriteLine((ConvertTo-Json $aState -Compress))
         }
     }
 

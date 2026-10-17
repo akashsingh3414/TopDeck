@@ -23,6 +23,24 @@ export interface RadiosInfo {
   btEnabled: boolean;
 }
 
+export interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  secured: boolean;
+  known: boolean; // saved profile, so it can be joined without a password
+  connected: boolean;
+}
+
+export interface BluetoothDevice {
+  name: string;
+  connected: boolean;
+}
+
+export interface AudioInfo {
+  muted: boolean;
+  volume: number; // 0-100, -1 when unknown
+}
+
 export interface IslandDimensions {
   width: number;
   height: number;

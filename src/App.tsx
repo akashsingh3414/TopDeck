@@ -14,6 +14,7 @@ declare global {
       getSystemStatus: () => Promise<any>;
       onToggleSuperHide?: (callback: () => void) => () => void;
       openSettings?: (setting: string) => Promise<boolean>;
+      notify?: (title: string, body: string) => Promise<boolean>;
     };
   }
 }

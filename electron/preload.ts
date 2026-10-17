@@ -10,6 +10,7 @@ export interface IslandAPI {
   getSystemStatus: () => Promise<any>;
   onToggleSuperHide: (callback: () => void) => () => void;
   openSettings: (setting: string) => Promise<boolean>;
+  notify: (title: string, body: string) => Promise<boolean>;
 }
 
 const api: IslandAPI = {
@@ -40,6 +41,9 @@ const api: IslandAPI = {
   },
   openSettings: (setting: string) => {
     return ipcRenderer.invoke('open-settings', setting);
+  },
+  notify: (title: string, body: string) => {
+    return ipcRenderer.invoke('notify', title, body);
   },
   onToggleSuperHide: (callback: () => void) => {
     const listener = () => callback();

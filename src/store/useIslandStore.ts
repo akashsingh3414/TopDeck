@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { IslandState, WidgetType, MediaTrack, RadiosInfo, WIDGET_ORDER } from '../types/island';
+import { IslandState, WidgetType, MediaTrack, RadiosInfo, AudioInfo, WifiNetwork, BluetoothDevice, WIDGET_ORDER } from '../types/island';
 
 export interface BatteryInfo {
   percent: number;
@@ -22,6 +22,10 @@ interface IslandStore {
   media: MediaTrack;
   battery: BatteryInfo;
   radios: RadiosInfo;
+  audio: AudioInfo;
+  // Fetched on demand when a list is opened; null while loading
+  wifiNetworks: WifiNetwork[] | null;
+  btDevices: BluetoothDevice[] | null;
 
   // Actions
   setState: (state: IslandState) => void;
@@ -32,6 +36,7 @@ interface IslandStore {
   toggleStealthMode: () => void;
   setStealthMode: (stealth: boolean) => void;
   setFullscreenHidden: (hidden: boolean) => void;
+  /** durationMs <= 0 keeps the peek open until the user hovers or it is replaced */
   peekWidget: (widget: WidgetType, durationMs?: number) => void;
   expand: (widget?: WidgetType) => void;
   collapse: (delayMs?: number) => void;
@@ -39,6 +44,9 @@ interface IslandStore {
   updateMedia: (media: Partial<MediaTrack>) => void;
   updateBattery: (battery: Partial<BatteryInfo>) => void;
   updateRadios: (radios: Partial<RadiosInfo>) => void;
+  updateAudio: (audio: Partial<AudioInfo>) => void;
+  setWifiNetworks: (networks: WifiNetwork[] | null) => void;
+  setBtDevices: (devices: BluetoothDevice[] | null) => void;
   tickMediaPosition: () => void;
 }
 
@@ -83,6 +91,14 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     wifiSignal: 0,
     btEnabled: true,
   },
+
+  audio: {
+    muted: false,
+    volume: -1,
+  },
+
+  wifiNetworks: null,
+  btDevices: null,
 
   setState: (state) => set({ state }),
 
@@ -134,7 +150,7 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
       return;
     }
 
-    const timer = setTimeout(() => {
+    const timer = durationMs <= 0 ? null : setTimeout(() => {
       const currentState = get().state;
       if (currentState === 'peek') {
         const { hasUserSelectedTab, activeWidget, media } = get();
@@ -255,6 +271,16 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
       radios: { ...s.radios, ...updated },
     }));
   },
+
+  updateAudio: (updated) => {
+    set((s) => ({
+      audio: { ...s.audio, ...updated },
+    }));
+  },
+
+  setWifiNetworks: (wifiNetworks) => set({ wifiNetworks }),
+
+  setBtDevices: (btDevices) => set({ btDevices }),
 
   tickMediaPosition: () => {
     const { media } = get();

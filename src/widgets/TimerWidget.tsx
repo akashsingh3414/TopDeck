@@ -1,6 +1,6 @@
 import React from 'react';
 import { IslandWidget } from './types';
-import { Timer, Play, Pause, RotateCcw, Bell } from 'lucide-react';
+import { Timer, Play, Pause, RotateCcw, Bell, X } from 'lucide-react';
 import { create } from 'zustand';
 import { Chip, IconButton, SectionLabel, formatDuration } from '../components/ui';
 
@@ -64,6 +64,30 @@ export const useTimerStore = create<TimerStore>((set, get) => ({
   },
 }));
 
+// Short three-note chime synthesized with Web Audio, so no sound asset is needed
+export const playChime = () => {
+  try {
+    const ctx = new AudioContext();
+    const notes = [880, 1174.66, 1567.98]; // A5, D6, G6
+    notes.forEach((freq, i) => {
+      const start = ctx.currentTime + i * 0.18;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.6);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.65);
+    });
+    setTimeout(() => ctx.close(), 1500);
+  } catch {
+    // Audio unavailable; the visual alert and toast still fire
+  }
+};
+
 const PRESETS = [
   { label: '1m', seconds: 60 },
   { label: '5m', seconds: 300 },
@@ -76,7 +100,7 @@ export const TimerIdle: React.FC = () => {
 
   return (
     <div className="flex items-center justify-between w-full h-full px-4 select-none">
-      <Timer className={`w-3.5 h-3.5 ${isFinished ? 'text-warn' : 'text-accent'}`} />
+      <Timer className={`w-3.5 h-3.5 ${isFinished ? 'text-warn animate-pulse' : 'text-accent'}`} />
       <span className={`text-[13px] font-semibold tabular-nums ${isFinished ? 'text-warn' : 'text-ink'}`}>
         {isFinished ? 'Done' : formatDuration(timeLeft)}
       </span>
@@ -85,13 +109,26 @@ export const TimerIdle: React.FC = () => {
 };
 
 export const TimerPeek: React.FC = () => {
-  const { isFinished, timeLeft } = useTimerStore();
+  const { isFinished, timeLeft, totalTime } = useTimerStore();
+
+  // Display only: hovering the island expands it, where Dismiss / Restart live
+  if (isFinished) {
+    return (
+      <div className="flex items-center justify-between w-full h-full px-5 select-none">
+        <div className="flex items-center gap-2">
+          <Bell className="w-4 h-4 text-warn animate-pulse" />
+          <span className="text-[13px] font-semibold text-ink">Time's up</span>
+        </div>
+        <span className="text-caption text-ink-muted tabular-nums">{formatDuration(totalTime)} done</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center justify-between w-full h-full px-5 select-none">
       <div className="flex items-center gap-2">
-        <Bell className={`w-4 h-4 ${isFinished ? 'text-warn' : 'text-accent'}`} />
-        <span className="text-[13px] font-semibold text-ink">{isFinished ? "Time's up" : 'Timer running'}</span>
+        <Bell className="w-4 h-4 text-accent" />
+        <span className="text-[13px] font-semibold text-ink">Timer running</span>
       </div>
       <span className="text-[13px] font-semibold text-ink tabular-nums">{formatDuration(timeLeft)}</span>
     </div>
@@ -161,7 +198,16 @@ export const TimerExpanded: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {isRunning ? (
+          {isFinished ? (
+            <>
+              <IconButton title={`Restart ${formatDuration(totalTime)}`} variant="on" size="lg" onClick={() => start(totalTime)}>
+                <RotateCcw />
+              </IconButton>
+              <IconButton title="Dismiss" onClick={reset}>
+                <X />
+              </IconButton>
+            </>
+          ) : isRunning ? (
             <IconButton title="Pause" variant="on" size="lg" onClick={pause}>
               <Pause className="fill-current" />
             </IconButton>
@@ -175,7 +221,7 @@ export const TimerExpanded: React.FC = () => {
               <Play className="fill-current translate-x-px" />
             </IconButton>
           )}
-          {totalTime > 0 && (
+          {totalTime > 0 && !isFinished && (
             <IconButton title="Reset" onClick={reset}>
               <RotateCcw />
             </IconButton>
