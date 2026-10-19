@@ -23,6 +23,7 @@ interface IslandStore {
   battery: BatteryInfo;
   radios: RadiosInfo;
   audio: AudioInfo;
+  brightness: number; // 0-100, default 80
   // Fetched on demand when a list is opened; null while loading
   wifiNetworks: WifiNetwork[] | null;
   btDevices: BluetoothDevice[] | null;
@@ -45,6 +46,7 @@ interface IslandStore {
   updateBattery: (battery: Partial<BatteryInfo>) => void;
   updateRadios: (radios: Partial<RadiosInfo>) => void;
   updateAudio: (audio: Partial<AudioInfo>) => void;
+  updateBrightness: (brightness: number) => void;
   setWifiNetworks: (networks: WifiNetwork[] | null) => void;
   setBtDevices: (devices: BluetoothDevice[] | null) => void;
 }
@@ -75,6 +77,8 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     isPlaying: false,
     position: 0,
     duration: 0,
+    canSkipNext: false,
+    canSkipPrevious: false,
   },
 
   battery: {
@@ -89,12 +93,15 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     wifiSsid: '',
     wifiSignal: 0,
     btEnabled: true,
+    btConnected: false,
   },
 
   audio: {
     muted: false,
     volume: -1,
   },
+
+  brightness: 80,
 
   wifiNetworks: null,
   btDevices: null,
@@ -230,6 +237,9 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     const albumArt = isNewTrack
       ? (updated.albumArt || '')
       : (updated.albumArt || (updated.title === '' ? '' : current.albumArt));
+    const duration = updated.duration === 0 && updated.title !== '' && !isNewTrack && current.duration > 0
+      ? current.duration
+      : updated.duration ?? current.duration;
 
     // Only auto-switch to media if user has NOT explicitly picked another tab
     let nextActive = activeWidget;
@@ -240,7 +250,7 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     }
 
     set((s) => ({
-      media: { ...s.media, ...updated, albumArt, isPlaying },
+      media: { ...s.media, ...updated, duration, albumArt, isPlaying },
       activeWidget: nextActive,
     }));
 
@@ -277,6 +287,10 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     set((s) => ({
       audio: { ...s.audio, ...updated },
     }));
+  },
+
+  updateBrightness: (brightness) => {
+    set({ brightness });
   },
 
   setWifiNetworks: (wifiNetworks) => set({ wifiNetworks }),

@@ -47,8 +47,8 @@
     ],
     "extraResources": [
       {
-        "from": "native/helper.ps1",
-        "to": "native/helper.ps1"
+        "from": "native",
+        "to": "native"
       },
       {
         "from": "assets",

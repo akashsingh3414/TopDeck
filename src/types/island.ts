@@ -13,6 +13,8 @@ export interface MediaTrack {
   position: number;
   duration: number;
   appTitle?: string;
+  canSkipNext: boolean;
+  canSkipPrevious: boolean;
 }
 
 export interface RadiosInfo {
@@ -21,6 +23,7 @@ export interface RadiosInfo {
   wifiSsid: string;
   wifiSignal: number;
   btEnabled: boolean;
+  btConnected: boolean;
 }
 
 export interface WifiNetwork {
@@ -49,18 +52,18 @@ export interface IslandDimensions {
 
 export const STATE_DIMENSIONS: Record<IslandState, IslandDimensions> = {
   idle: {
-    width: 175,
-    height: 32,
-    bottomRadius: 20,
+    width: 280,
+    height: 34,
+    bottomRadius: 12,
   },
   peek: {
-    width: 320,
-    height: 44,
-    bottomRadius: 22,
+    width: 350,
+    height: 42,
+    bottomRadius: 20,
   },
   expanded: {
-    width: 460,
-    height: 200,
-    bottomRadius: 32,
+    width: 500,
+    height: 236,
+    bottomRadius: 34,
   },
 };

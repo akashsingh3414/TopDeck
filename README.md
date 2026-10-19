@@ -1,18 +1,18 @@
 # TopDeck for Windows
 
-A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + React 19 + TypeScript + Vite + Tailwind CSS + Framer Motion + Zustand**, plus a lightweight native PowerShell/WinRT helper for media controls, system volume, Wi-Fi, Bluetooth, battery, and fullscreen auto-hide.
+A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + React 19 + TypeScript + Vite + Tailwind CSS + Framer Motion + Zustand**, plus a lightweight native PowerShell/WinRT helper for media controls, system volume, display brightness, Wi-Fi, Bluetooth, battery, and fullscreen auto-hide.
 
 ---
 
 ## What You Get
 
-* **Clean iOS-style Look**
-  * A pure-black island that blends into the top of your screen, with a single blue accent for anything switched on (Wi-Fi, Bluetooth, pin, Super Hide, the timer).
-  * Expanded view has one header row: `‹ System | Music | Timer ›` with a sliding highlight, plus Pin and Super Hide on the right. Nothing overlaps the widget content.
-  * Green, orange and red appear only for status: charging, timer finished, low battery.
+* **A Calm, Compact Interface**
+  * A softly layered charcoal-black island that blends into the top of your screen, with restrained highlights and color reserved for meaningful states.
+  * Expanded view has one header row: `‹ System | Media | Timer ›` with a sliding highlight, plus Pin and Super Hide on the right. Nothing overlaps the widget content.
+  * The collapsed focus timer shows its progress at a glance; expanding the island keeps controls grouped by purpose.
 * **Universal Music & Video HUD**
-  * Play/Pause, Next, Previous, a **system volume slider**, and a **mute button that shows Windows' real mute state**, even when you mute from the keyboard or taskbar.
-  * Live album artwork, track title and artist.
+  * The Media tab focuses on playback: Play/Pause, Next and Previous, with live artwork, title, artist and playback progress when available.
+  * Adjust system volume and mute state from the System tab, alongside display brightness and connectivity controls.
   * Works with **Spotify, YouTube (Chrome, Edge, Brave, Firefox), Apple Music, VLC, Windows Media Player**, and any app that shows up in Windows' media controls.
   * Artwork stays correct across track changes, including songs from the same album and apps that fill in the title/artist late.
 * **Wi-Fi & Bluetooth Quick Controls**
@@ -30,7 +30,7 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
 * **Stealth Mode (Super Hide)**
   * Tucks the island into a 4px hairline at the top center of your screen, and it slides down when your cursor touches the top edge.
 * **Plays Nicely with Windows**
-  * Everything outside the black pill is click-through.
+  * Everything outside the island is click-through.
   * Hides itself in full-screen games, full-screen video and presentations.
   * Follows **Settings → Accessibility → Visual effects → Animation effects**: with animations off, motion is instant and decorative loops stop.
 
@@ -72,6 +72,8 @@ Download the newer `TopDeck-X.X.X.exe` from Releases and run it. It upgrades you
   * `‹` `System | Music | Timer` `›`: switch tabs.
   * Pin: keep the island expanded even when the mouse leaves.
   * Super Hide: toggle stealth mode on/off.
+* **System tab:** adjust display brightness, system volume and mute, or manage Wi-Fi and Bluetooth.
+* **Media tab:** view track information and playback progress, and control playback.
 
 ---
 
@@ -99,21 +101,35 @@ topdeck/
 │   ├── main.ts                  # Main process: window, click-through hit-testing, tray, notifications, IPC
 │   └── preload.ts               # Secure typed contextBridge API
 ├── native/
-│   └── helper.ps1               # Media session, volume/mute, Wi-Fi & Bluetooth, battery, fullscreen helper
+│   ├── helper.ps1               # Native helper startup and polling loop
+│   └── modules/
+│       ├── Commands.ps1         # IPC command routing
+│       ├── Media.ps1            # Windows media-session state and track metadata
+│       ├── SystemState.ps1      # Battery, radios, audio, brightness, and fullscreen state
+│       └── NativeInterop.ps1    # Win32 input/window and Core Audio interop
 ├── scripts/
 │   └── make-icon.js             # Renders the SVG logos to PNG (npx electron scripts/make-icon.js)
 ├── src/
 │   ├── components/
 │   │   ├── DynamicIsland.tsx    # Island shell, header controls, spring physics
-│   │   └── ui.tsx               # Shared buttons, chips, duration formatting
+│   │   └── ui.tsx               # Shared buttons and chips
+│   ├── hooks/
+│   │   ├── useIslandEvents.ts   # Island lifecycle, keyboard, and timer events
+│   │   └── useNativeStateSync.ts # Native helper event subscription
 │   ├── store/
-│   │   └── useIslandStore.ts    # Zustand state: island states, media, audio, radios, lists
+│   │   ├── useIslandStore.ts    # Island, media, audio, radio, and list state
+│   │   └── useTimerStore.ts     # Persistent focus timer state
 │   ├── types/
 │   │   └── island.ts            # Island dimensions, states, and data models
+│   ├── services/
+│   │   └── timerAudio.ts        # Timer completion sound
+│   ├── utils/
+│   │   └── formatDuration.ts    # Shared time formatting
 │   ├── widgets/
-│   │   ├── ClockWidget.tsx      # Clock, battery, Wi-Fi & Bluetooth tiles and lists
-│   │   ├── MediaWidget.tsx      # Media player and volume slider
-│   │   ├── TimerWidget.tsx      # Focus timer (persisted), progress ring, chime
+│   │   ├── ClockWidget.tsx      # System view composition
+│   │   ├── MediaWidget.tsx      # Track information, progress and playback controls
+│   │   ├── TimerWidget.tsx      # Focus timer views and controls
+│   │   ├── system/              # Calendar, radio, status, and system-control modules
 │   │   └── types.ts             # Widget interface definition
 │   ├── App.tsx                  # Root window shell (reduced-motion support)
 │   ├── index.css                # Base styles, keyframes, reduced-motion rules
@@ -127,7 +143,7 @@ topdeck/
 
 ### Theme
 
-Colors live in `tailwind.config.js`: a pure-black island, one accent (`accent`, iOS blue `#0A84FF`) for anything switched on, and `ok` / `warn` / `danger` only for status (charging, timer finished, low battery). Shared controls are in `src/components/ui.tsx`, so new UI should reuse them.
+The island uses a layered charcoal-black surface, with a restrained blue accent for active controls and status colors reserved for meaningful states. Shared controls are in `src/components/ui.tsx`, so new UI should reuse them.
 
 ### Local Development
 
@@ -145,7 +161,7 @@ npm run build
 npm run dist
 ```
 
-Changes to `electron/main.ts` or `electron/preload.ts` need a full restart of the app (not just a reload). Changes to `native/helper.ps1` take effect after **Restart Native Helper** in the tray menu.
+Changes to `electron/main.ts` or `electron/preload.ts` need a full restart of the app (not just a reload). Changes to `native/helper.ps1` or any file under `native/modules/` take effect after **Restart Native Helper** in the tray menu.
 ---
 
 ## License

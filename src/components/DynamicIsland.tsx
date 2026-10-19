@@ -3,11 +3,14 @@ import { motion, AnimatePresence, Transition, Variants, useReducedMotion } from 
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { ClockWidget } from '../widgets/ClockWidget';
-import { MediaWidget } from '../widgets/MediaWidget';
-import { TimerWidget, useTimerStore, playChime } from '../widgets/TimerWidget';
+import { MediaAmbientBackground, MediaProgressBar, MediaWidget } from '../widgets/MediaWidget';
+import { TimerWidget } from '../widgets/TimerWidget';
+import { useTimerStore } from '../store/useTimerStore';
+import { useIslandEvents } from '../hooks/useIslandEvents';
+import { useNativeStateSync } from '../hooks/useNativeStateSync';
 import {
-  Clock,
-  Music,
+  SlidersHorizontal,
+  Music2,
   Timer as TimerIcon,
   ChevronLeft,
   ChevronRight,
@@ -16,48 +19,51 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { IconButton, formatDuration } from './ui';
+import { IconButton } from './ui';
 
-const TABS: { id: WidgetType; label: string; title: string; Icon: typeof Clock }[] = [
-  { id: 'clock', label: 'System', title: 'System (Clock, Wi-Fi, Bluetooth & Battery)', Icon: Clock },
-  { id: 'media', label: 'Music', title: 'Music & Media', Icon: Music },
-  { id: 'timer', label: 'Timer', title: 'Focus Timer', Icon: TimerIcon },
+const TABS: { id: WidgetType; label: string; title: string; Icon: typeof SlidersHorizontal }[] = [
+  { id: 'clock', label: 'System', title: 'System & Control Center', Icon: SlidersHorizontal },
+  { id: 'media', label: 'Media', title: 'Media controls', Icon: Music2 },
+  { id: 'timer', label: 'Timer', title: 'Focus Countdown Timer', Icon: TimerIcon },
 ];
 
-// iOS TopDeck spring physics
-const islandSpring: Transition = {
+// Apple SwiftUI Spring Physics
+const atollSpring: Transition = {
   type: 'spring',
-  stiffness: 450,
-  damping: 34,
+  stiffness: 420,
+  damping: 32,
   mass: 0.8,
 };
 
-// Dimensions for super-hide notch and trigger zone
-const SUPER_HIDE_WIDTH = 280;
+// Super-hide dimensions: hairline notch at the top center
+const SUPER_HIDE_WIDTH = 260;
 const SUPER_HIDE_HEIGHT = 4;
-const SUPER_HIDE_TRIGGER_HEIGHT = 9;
-const SUPER_HIDE_RADIUS = 4;
+const SUPER_HIDE_TRIGGER_HEIGHT = 12;
+const SUPER_HIDE_RADIUS = 3;
 
-// Subtle cross-fade & micro-slide variants for smooth widget switching
+// Subtle cross-fade & micro-slide variants for seamless widget transitions
 const contentSlideVariants: Variants = {
   enter: (direction: number) => ({
-    x: direction > 0 ? 12 : -12,
+    x: direction > 0 ? 8 : -8,
+    y: 3,
     opacity: 0,
   }),
   center: {
     x: 0,
+    y: 0,
     opacity: 1,
     transition: {
-      duration: 0.16,
-      ease: 'easeOut',
+      duration: 0.2,
+      ease: [0.16, 1, 0.3, 1],
     },
   },
   exit: (direction: number) => ({
-    x: direction > 0 ? -12 : 12,
+    x: direction > 0 ? -8 : 8,
+    y: -2,
     opacity: 0,
     transition: {
-      duration: 0.1,
-      ease: 'easeIn',
+      duration: 0.14,
+      ease: [0.16, 1, 0.3, 1],
     },
   }),
 };
@@ -79,137 +85,25 @@ export const DynamicIsland: React.FC = () => {
     stealthMode,
     toggleStealthMode,
     isFullscreenHidden,
-    setFullscreenHidden,
-    updateMedia,
-    updateBattery,
-    updateRadios,
-    updateAudio,
-    setWifiNetworks,
-    setBtDevices,
     media,
     hasUserSelectedTab,
   } = useIslandStore();
 
   const pillRef = useRef<HTMLDivElement>(null);
-  // MotionConfig only disables transforms; width/height resizes need this to go instant too
   const reduceMotion = useReducedMotion();
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isHovered, setIsHovered] = useState(false);
 
   const currentDimensions = STATE_DIMENSIONS[state];
-  const timerTick = useTimerStore((s) => s.tick);
   const timerRunning = useTimerStore((s) => s.isRunning);
   const timerFinished = useTimerStore((s) => s.isFinished);
-  // Seeded from the restored timer so an already-alerted "Time's up" doesn't chime again on launch
-  const prevTimerFinishedRef = useRef(useTimerStore.getState().isFinished);
 
-  // Determine whether the island should be visible or tucked in stealth mode
   const isVisible = !stealthMode || isHovered || pinned || state === 'expanded' || state === 'peek';
 
-  // Timer countdown hook
-  useEffect(() => {
-    if (!timerRunning) return;
-    const interval = setInterval(timerTick, 1000);
-    return () => clearInterval(interval);
-  }, [timerRunning, timerTick]);
+  useIslandEvents({ nextWidget, prevWidget, toggleStealthMode, peekWidget, pillRef });
+  useNativeStateSync();
 
-  // Timer finished (rising edge only): sticky peek until the user hovers, plus chime and toast
-  useEffect(() => {
-    if (timerFinished && !prevTimerFinishedRef.current) {
-      peekWidget('timer', 0);
-      playChime();
-      const total = useTimerStore.getState().totalTime;
-      window.islandAPI?.notify?.("Time's up", `Your ${formatDuration(total)} focus timer has finished.`);
-    }
-    prevTimerFinishedRef.current = timerFinished;
-  }, [timerFinished, peekWidget]);
-
-  // Keyboard navigation (Left / Right Arrow)
-  useEffect(() => {
-    let lastKeyTime = 0;
-    const onKeyDown = (e: KeyboardEvent) => {
-      const now = Date.now();
-      if (now - lastKeyTime < 240) return;
-
-      if (e.key === 'ArrowRight') {
-        lastKeyTime = now;
-        nextWidget();
-      } else if (e.key === 'ArrowLeft') {
-        lastKeyTime = now;
-        prevWidget();
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [nextWidget, prevWidget]);
-
-  // Tray toggle super hide listener
-  useEffect(() => {
-    if (!window.islandAPI?.onToggleSuperHide) return;
-    const cleanup = window.islandAPI.onToggleSuperHide(() => {
-      toggleStealthMode();
-    });
-    return cleanup;
-  }, [toggleStealthMode]);
-
-  // Native event listeners (Media, Battery, Fullscreen) from Electron IPC
-  useEffect(() => {
-    if (!window.islandAPI) return;
-
-    const cleanup = window.islandAPI.onMediaUpdate((data) => {
-      if (!data) return;
-      if (data.type === 'media') {
-        // A failed read is transient; don't let it blank out the current track and artwork
-        if (data.error) return;
-        updateMedia({
-          title: data.title || '',
-          artist: data.artist || '',
-          album: data.album || '',
-          isPlaying: !!data.isPlaying,
-          position: data.position || 0,
-          duration: data.duration || 0,
-          albumArt: data.albumArt || '',
-          appTitle: data.appTitle || '',
-        });
-      } else if (data.type === 'battery') {
-        updateBattery({
-          percent: data.percent,
-          isCharging: data.isCharging,
-          status: data.status,
-        });
-      } else if (data.type === 'radios') {
-        updateRadios({
-          wifiEnabled: !!data.wifiEnabled,
-          wifiConnected: !!data.wifiConnected,
-          wifiSsid: data.wifiSsid || '',
-          wifiSignal: data.wifiSignal || 0,
-          btEnabled: !!data.btEnabled,
-        });
-      } else if (data.type === 'audio') {
-        updateAudio({
-          muted: !!data.muted,
-          volume: typeof data.volume === 'number' ? data.volume : -1,
-        });
-      } else if (data.type === 'wifiList') {
-        setWifiNetworks(Array.isArray(data.networks) ? data.networks : []);
-      } else if (data.type === 'btList') {
-        setBtDevices(Array.isArray(data.devices) ? data.devices : []);
-      } else if (data.type === 'fullscreen') {
-        setFullscreenHidden(!!data.isFullscreen);
-      }
-    });
-
-    return () => {
-      cleanup();
-    };
-  }, [updateMedia, updateBattery, updateRadios, updateAudio, setWifiNetworks, setBtDevices, setFullscreenHidden]);
-
-  // Report pill bounding rect to Electron main process for hit testing.
-  // The pill is centered in the window, so x is derived from the window's real width
-  // rather than a copy of electron/main.ts WINDOW_WIDTH.
+  // Report pill bounding rect to Electron main process for reference
   useEffect(() => {
     const updateBounds = () => {
       if (window.islandAPI) {
@@ -220,7 +114,6 @@ export const DynamicIsland: React.FC = () => {
         }
 
         if (!isVisible) {
-          // In super-hide mode: wide top-edge trigger zone at top center
           const centerX = Math.round((windowWidth - SUPER_HIDE_WIDTH) / 2);
           window.islandAPI.updatePillBounds({
             x: centerX,
@@ -231,8 +124,6 @@ export const DynamicIsland: React.FC = () => {
           return;
         }
 
-        // Send target bounds for state immediately so Electron's hit-testing loop
-        // never drops mouse capture while the spring animation is running!
         const dim = STATE_DIMENSIONS[state];
         const targetX = Math.round((windowWidth - dim.width) / 2);
         window.islandAPI.updatePillBounds({
@@ -270,28 +161,28 @@ export const DynamicIsland: React.FC = () => {
       if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = setTimeout(() => {
         collapse(0);
+        window.islandAPI?.setIgnoreMouseEvents(true, { forward: true });
       }, 550);
     } else {
       collapse(380);
+      window.islandAPI?.setIgnoreMouseEvents(true, { forward: true });
     }
   };
 
-  // Clicking only ever opens the island; it closes when the pointer leaves, so a
-  // near-miss on a control can't collapse it
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (state !== 'expanded') {
+      window.islandAPI?.setIgnoreMouseEvents(false);
       expand();
     }
   };
 
-  // Render Widget view based on state & activeWidget
   const renderContent = () => {
-    // When super hidden and not hovered, show minimal indicator line
+    // Super hidden and not hovered: show elegant minimal notch indicator line
     if (!isVisible) {
       return (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="w-10 h-0.5 rounded-full bg-white/30" />
+          <div className="w-16 h-1 rounded-full bg-white/40 shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
         </div>
       );
     }
@@ -332,17 +223,23 @@ export const DynamicIsland: React.FC = () => {
     if (state === 'expanded') {
       return (
         <div className="flex flex-col w-full h-full">
-          {/* Header: [<] [System | Music | Timer] [>]  ....  [pin] [hide] */}
+          {/* Header Bar: [<] [System | Music | Timer] [>]  ....  [Pin] [Super Hide] */}
           <div
             className="flex items-center justify-between h-11 px-3 pt-1 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Left: Tab Segmented Pill & Chevrons */}
             <div className="flex items-center gap-1">
-              <IconButton title="Previous tab (Left arrow)" size="sm" onClick={prevWidget}>
+              <IconButton
+                title="Previous tab (Left arrow)"
+                size="sm"
+                variant="ghost"
+                onClick={prevWidget}
+              >
                 <ChevronLeft />
               </IconButton>
 
-              <div className="relative flex items-center p-0.5 rounded-full bg-white/[0.06]">
+              <div className="relative flex items-center p-0.5 rounded-full bg-white/[0.08] border border-white/[0.05] backdrop-blur-md">
                 {TABS.map(({ id, label, title, Icon }) => {
                   const isActive = activeWidget === id;
                   return (
@@ -350,31 +247,39 @@ export const DynamicIsland: React.FC = () => {
                       key={id}
                       type="button"
                       title={title}
-                      onClick={() =>
-                        setActiveWidget(id, WIDGET_ORDER.indexOf(id) >= WIDGET_ORDER.indexOf(activeWidget) ? 1 : -1)
-                      }
-                      className={`relative h-6 px-2.5 rounded-full text-caption font-medium flex items-center gap-1.5 transition-colors duration-150 ${isActive ? 'text-ink' : 'text-ink-faint hover:text-ink-muted'
-                        }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveWidget(id, WIDGET_ORDER.indexOf(id) >= WIDGET_ORDER.indexOf(activeWidget) ? 1 : -1);
+                      }}
+                      className={`relative h-6 px-3 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all duration-150 cursor-pointer ${
+                        isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
+                      }`}
                     >
                       {isActive && (
                         <motion.span
-                          layoutId="tab-indicator"
-                          className="absolute inset-0 rounded-full bg-white/[0.14]"
-                          transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+                          layoutId="atoll-tab-indicator"
+                          className="absolute inset-0 rounded-full bg-white/[0.18] border border-white/20 shadow-sm"
+                          transition={{ type: 'spring', stiffness: 520, damping: 36 }}
                         />
                       )}
-                      <Icon className="relative w-3 h-3" />
+                      <Icon className="relative w-3.5 h-3.5" />
                       <span className="relative">{label}</span>
                     </button>
                   );
                 })}
               </div>
 
-              <IconButton title="Next tab (Right arrow)" size="sm" onClick={nextWidget}>
+              <IconButton
+                title="Next tab (Right arrow)"
+                size="sm"
+                variant="ghost"
+                onClick={nextWidget}
+              >
                 <ChevronRight />
               </IconButton>
             </div>
 
+            {/* Right: Pin & Super Hide Actions */}
             <div className="flex items-center gap-1">
               <IconButton
                 title={pinned ? 'Unpin island' : 'Pin island (keep expanded)'}
@@ -384,11 +289,12 @@ export const DynamicIsland: React.FC = () => {
               >
                 {pinned ? <Pin className="fill-current" /> : <PinOff />}
               </IconButton>
+
               <IconButton
                 title={
                   stealthMode
-                    ? 'Super Hide: On (tucks into the top edge until hovered)'
-                    : 'Super Hide: Off (click to tuck into the top edge)'
+                    ? 'Super Hide: On (tucked into notch)'
+                    : 'Super Hide: Off (click to tuck into notch)'
                 }
                 size="sm"
                 variant={stealthMode ? 'on' : 'ghost'}
@@ -401,8 +307,8 @@ export const DynamicIsland: React.FC = () => {
 
           {/* Widget Body */}
           <div className="flex-1 w-full min-h-0 overflow-hidden">
-            {activeWidget === 'media' && <MediaWidget.expandedView />}
             {activeWidget === 'clock' && <ClockWidget.expandedView />}
+            {activeWidget === 'media' && <MediaWidget.expandedView />}
             {activeWidget === 'timer' && <TimerWidget.expandedView />}
           </div>
         </div>
@@ -418,7 +324,7 @@ export const DynamicIsland: React.FC = () => {
 
   return (
     <div className="w-full h-full flex flex-col items-center justify-start pt-0 pointer-events-none">
-      {/* TopDeck Pill with flat top and curved bottom corners */}
+      {/* Atoll Dynamic Island Pill */}
       <motion.div
         ref={pillRef}
         onClick={handleClick}
@@ -433,24 +339,27 @@ export const DynamicIsland: React.FC = () => {
           borderBottomLeftRadius: targetBottomRadius,
           borderBottomRightRadius: targetBottomRadius,
         }}
-        transition={reduceMotion ? { duration: 0 } : islandSpring}
-        className={`relative bg-black text-white ${state === 'expanded' ? 'cursor-default' : 'cursor-pointer'} pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center`}
+        transition={reduceMotion ? { duration: 0 } : atollSpring}
+        className={`relative bg-black text-white ${
+          state === 'expanded' ? 'cursor-default' : 'cursor-pointer'
+        } pointer-events-auto overflow-hidden select-none flex flex-col justify-start items-center`}
         style={{
           borderTopLeftRadius: 0,
           borderTopRightRadius: 0,
           borderBottomLeftRadius: targetBottomRadius,
           borderBottomRightRadius: targetBottomRadius,
-          // Hairline edge + soft drop shadow; no top edge so the island melts into the screen bezel
+          backgroundColor: '#000000',
           boxShadow: !isVisible
-            ? '0 2px 8px rgba(0, 0, 0, 0.8), inset 0 -1px 0 rgba(255, 255, 255, 0.12)'
+            ? '0 2px 8px rgba(0, 0, 0, 0.9)'
             : state === 'expanded'
-              ? '0 24px 48px -12px rgba(0, 0, 0, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.1), inset 1px 0 0 rgba(255, 255, 255, 0.06), inset -1px 0 0 rgba(255, 255, 255, 0.06)'
-              : '0 8px 20px -6px rgba(0, 0, 0, 0.8), inset 0 -1px 0 rgba(255, 255, 255, 0.08)',
+            ? '0 24px 56px -12px rgba(0, 0, 0, 0.95)'
+            : '0 8px 24px -4px rgba(0, 0, 0, 0.85)',
           transform: 'translateZ(0)',
         }}
       >
+        <MediaAmbientBackground />
         <div
-          className="w-full h-full flex flex-col overflow-hidden"
+          className="relative z-10 w-full h-full flex flex-col overflow-hidden"
           style={{
             borderTopLeftRadius: 0,
             borderTopRightRadius: 0,
@@ -475,10 +384,16 @@ export const DynamicIsland: React.FC = () => {
               }}
             >
               {renderContent()}
+              {state === 'idle' &&
+                !timerRunning &&
+                !timerFinished &&
+                activeWidget !== 'media' &&
+                activeWidget !== 'timer' &&
+                media.title &&
+                media.duration > 0 && <MediaProgressBar />}
             </motion.div>
           </AnimatePresence>
         </div>
-
       </motion.div>
     </div>
   );

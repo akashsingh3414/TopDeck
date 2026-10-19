@@ -1,140 +1,45 @@
 import React from 'react';
 import { IslandWidget } from './types';
 import { Timer, Play, Pause, RotateCcw, Bell, X } from 'lucide-react';
-import { create } from 'zustand';
-import { Chip, IconButton, SectionLabel, formatDuration } from '../components/ui';
-
-interface TimerState {
-  isRunning: boolean;
-  timeLeft: number; // in seconds
-  totalTime: number;
-  isFinished: boolean;
-  endsAt: number | null; // epoch ms while running; the countdown is derived from it
-}
-
-interface TimerStore extends TimerState {
-  start: (seconds: number) => void;
-  pause: () => void;
-  resume: () => void;
-  reset: () => void;
-  tick: () => void;
-}
-
-const TIMER_STORAGE_KEY = 'island_timer';
-
-const IDLE_TIMER: TimerState = {
-  isRunning: false,
-  timeLeft: 0,
-  totalTime: 0,
-  isFinished: false,
-  endsAt: null,
-};
-
-const secondsUntil = (endsAt: number) => Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
-
-// Restore a timer that was running or paused when TopDeck last closed
-const loadTimer = (): TimerState => {
-  try {
-    const saved = JSON.parse(localStorage.getItem(TIMER_STORAGE_KEY) || 'null') as TimerState | null;
-    if (!saved || typeof saved.totalTime !== 'number') return IDLE_TIMER;
-    if (saved.isRunning && saved.endsAt) {
-      // Still running: catch up on the time that passed while closed (tick finishes it if it ran out)
-      return { ...saved, timeLeft: secondsUntil(saved.endsAt) };
-    }
-    return saved;
-  } catch {
-    return IDLE_TIMER;
-  }
-};
-
-export const useTimerStore = create<TimerStore>((set, get) => ({
-  ...loadTimer(),
-
-  start: (seconds) => {
-    set({
-      isRunning: true,
-      timeLeft: seconds,
-      totalTime: seconds,
-      isFinished: false,
-      endsAt: Date.now() + seconds * 1000,
-    });
-  },
-
-  pause: () => {
-    const { endsAt } = get();
-    set({ isRunning: false, timeLeft: endsAt ? secondsUntil(endsAt) : get().timeLeft, endsAt: null });
-  },
-
-  resume: () => {
-    const { timeLeft } = get();
-    if (timeLeft > 0) {
-      set({ isRunning: true, endsAt: Date.now() + timeLeft * 1000 });
-    }
-  },
-
-  reset: () => set(IDLE_TIMER),
-
-  tick: () => {
-    const { isRunning, endsAt } = get();
-    if (!isRunning || !endsAt) return;
-
-    const timeLeft = secondsUntil(endsAt);
-    if (timeLeft <= 0) {
-      set({ timeLeft: 0, isRunning: false, isFinished: true, endsAt: null });
-    } else if (timeLeft !== get().timeLeft) {
-      set({ timeLeft });
-    }
-  },
-}));
-
-useTimerStore.subscribe(({ isRunning, timeLeft, totalTime, isFinished, endsAt }) => {
-  try {
-    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify({ isRunning, timeLeft, totalTime, isFinished, endsAt }));
-  } catch {
-    // Storage unavailable; the timer still works for this session
-  }
-});
-
-// Short three-note chime synthesized with Web Audio, so no sound asset is needed
-export const playChime = () => {
-  try {
-    const ctx = new AudioContext();
-    const notes = [880, 1174.66, 1567.98]; // A5, D6, G6
-    notes.forEach((freq, i) => {
-      const start = ctx.currentTime + i * 0.18;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.18, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.6);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.65);
-    });
-    setTimeout(() => ctx.close(), 1500);
-  } catch {
-    // Audio unavailable; the visual alert and toast still fire
-  }
-};
+import { Chip, IconButton, SectionLabel } from '../components/ui';
+import { useTimerStore } from '../store/useTimerStore';
+import { formatDuration } from '../utils/formatDuration';
 
 const PRESETS = [
-  { label: '1m', seconds: 60 },
   { label: '5m', seconds: 300 },
   { label: '15m', seconds: 900 },
-  { label: '25m', seconds: 1500 },
+  { label: '25m (Pomodoro)', seconds: 1500 },
+  { label: '45m', seconds: 2700 },
+  { label: '1h', seconds: 3600 },
 ];
 
 export const TimerIdle: React.FC = () => {
-  const { timeLeft, isFinished } = useTimerStore();
+  const { timeLeft, totalTime, isFinished } = useTimerStore();
+  const elapsed = totalTime > 0
+    ? isFinished
+      ? 1
+      : Math.min(1, Math.max(0, 1 - timeLeft / totalTime))
+    : 0;
 
   return (
-    <div className="flex items-center justify-between w-full h-full px-4 select-none">
-      <Timer className={`w-3.5 h-3.5 ${isFinished ? 'text-warn animate-pulse' : 'text-accent'}`} />
-      <span className={`text-[13px] font-semibold tabular-nums ${isFinished ? 'text-warn' : 'text-ink'}`}>
-        {isFinished ? 'Done' : formatDuration(timeLeft)}
+    <div className="relative flex items-center justify-between w-full h-full px-4 select-none">
+      <div className="flex items-center gap-2">
+        <Timer className={`w-3.5 h-3.5 ${isFinished ? 'text-[#FF9500]' : 'text-white/75'}`} />
+        <span className="text-[10px] font-medium text-white/55">Focus</span>
+      </div>
+      <span className={`text-[13px] font-semibold tracking-tight tabular-nums ${isFinished ? 'text-[#FF9500]' : 'text-white'}`}>
+        {isFinished ? "Time's Up!" : formatDuration(timeLeft)}
       </span>
+      {totalTime > 0 && (
+        <div className="absolute bottom-0 left-4 right-4 h-[2px] overflow-hidden rounded-full bg-white/[0.08]">
+          <div
+            className={`h-full rounded-full transition-[width] duration-700 ease-out ${
+              isFinished ? 'bg-[#FF9500]' : 'bg-white/75'
+            }`}
+            style={{ width: `${elapsed * 100}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -142,15 +47,14 @@ export const TimerIdle: React.FC = () => {
 export const TimerPeek: React.FC = () => {
   const { isFinished, timeLeft, totalTime } = useTimerStore();
 
-  // Display only: hovering the island expands it, where Dismiss / Restart live
   if (isFinished) {
     return (
       <div className="flex items-center justify-between w-full h-full px-5 select-none">
         <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-warn animate-pulse" />
-          <span className="text-[13px] font-semibold text-ink">Time's up</span>
+          <Bell className="w-4 h-4 text-[#FF9500] animate-bounce" />
+          <span className="text-[13px] font-semibold text-white">Time's Up</span>
         </div>
-        <span className="text-caption text-ink-muted tabular-nums">{formatDuration(totalTime)} done</span>
+        <span className="text-[11px] text-white/60 tabular-nums">{formatDuration(totalTime)} finished</span>
       </div>
     );
   }
@@ -158,15 +62,15 @@ export const TimerPeek: React.FC = () => {
   return (
     <div className="flex items-center justify-between w-full h-full px-5 select-none">
       <div className="flex items-center gap-2">
-        <Bell className="w-4 h-4 text-accent" />
-        <span className="text-[13px] font-semibold text-ink">Timer running</span>
+        <Bell className="w-4 h-4 text-[#FF9500]" />
+        <span className="text-[13px] font-semibold text-white">Focus Timer</span>
       </div>
-      <span className="text-[13px] font-semibold text-ink tabular-nums">{formatDuration(timeLeft)}</span>
+      <span className="text-[13px] font-semibold text-[#FF9500] tabular-nums">{formatDuration(timeLeft)}</span>
     </div>
   );
 };
 
-const RING_SIZE = 124;
+const RING_SIZE = 118;
 const RING_STROKE = 6;
 
 const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: React.ReactNode }> = ({
@@ -180,7 +84,14 @@ const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: Re
   return (
     <div className="relative flex-shrink-0" style={{ width: RING_SIZE, height: RING_SIZE }}>
       <svg width={RING_SIZE} height={RING_SIZE} className="-rotate-90">
-        <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={r} fill="none" strokeWidth={RING_STROKE} className="stroke-white/[0.1]" />
+        <circle
+          cx={RING_SIZE / 2}
+          cy={RING_SIZE / 2}
+          r={r}
+          fill="none"
+          strokeWidth={RING_STROKE}
+          className="stroke-white/[0.1]"
+        />
         <circle
           cx={RING_SIZE / 2}
           cy={RING_SIZE / 2}
@@ -190,7 +101,9 @@ const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: Re
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - fraction)}
-          className={`${finished ? 'stroke-warn' : 'stroke-accent'} transition-[stroke-dashoffset] duration-1000 ease-linear`}
+          className={`${
+            finished ? 'stroke-[#FF453A]' : 'stroke-[#FF9500]'
+          } transition-[stroke-dashoffset] duration-1000 ease-linear shadow-[0_0_12px_rgba(255,149,0,0.5)]`}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">{children}</div>
@@ -201,59 +114,90 @@ const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: Re
 export const TimerExpanded: React.FC = () => {
   const { isRunning, isFinished, timeLeft, totalTime, start, pause, resume, reset } = useTimerStore();
 
-  // Ring drains as time runs out; full when idle so it reads as "ready"
   const fraction = totalTime > 0 ? timeLeft / totalTime : isFinished ? 0 : 1;
   const status = isFinished ? "Time's up" : isRunning ? 'Focusing' : timeLeft > 0 ? 'Paused' : 'Ready';
 
   return (
-    <div className="flex w-full h-full px-5 pb-4 pt-1 gap-5 select-none">
+    <div className="flex w-full h-full px-5 pb-3 pt-1 gap-5 select-none items-center">
+      {/* Progress Ring with Time */}
       <ProgressRing fraction={fraction} finished={isFinished}>
-        <span className="text-[26px] font-semibold tracking-tight text-ink tabular-nums leading-none">
+        <span className="text-[24px] font-bold tracking-tight text-white tabular-nums leading-none">
           {formatDuration(timeLeft)}
         </span>
-        <span className={`text-micro font-semibold uppercase mt-1.5 ${isFinished ? 'text-warn' : 'text-ink-faint'}`}>
+        <span
+          className={`text-[9px] font-bold uppercase tracking-wider mt-1.5 ${
+            isFinished ? 'text-[#FF453A]' : isRunning ? 'text-[#FF9500]' : 'text-white/45'
+          }`}
+        >
           {status}
         </span>
       </ProgressRing>
 
-      <div className="flex flex-col justify-between flex-1 min-w-0 py-1">
-        <div className="flex flex-col gap-2">
-          <SectionLabel>Focus Timer</SectionLabel>
+      {/* Preset Chips & Action Buttons */}
+      <div className="flex flex-col justify-between flex-1 min-w-0 py-1 h-[120px]">
+        <div className="flex flex-col gap-1.5">
+          <SectionLabel>Focus Durations</SectionLabel>
           <div className="flex flex-wrap gap-1.5">
             {PRESETS.map((p) => (
-              <Chip key={p.seconds} active={totalTime === p.seconds} onClick={() => start(p.seconds)}>
+              <Chip
+                key={p.seconds}
+                active={totalTime === p.seconds}
+                onClick={() => start(p.seconds)}
+              >
                 {p.label}
               </Chip>
             ))}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Controls */}
+        <div className="flex items-center gap-2 mt-2">
           {isFinished ? (
             <>
-              <IconButton title={`Restart ${formatDuration(totalTime)}`} variant="on" size="lg" onClick={() => start(totalTime)}>
-                <RotateCcw />
-              </IconButton>
-              <IconButton title="Dismiss" onClick={reset}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  start(totalTime);
+                }}
+                className="h-9 px-4 rounded-full bg-[#FF9500] text-black font-semibold text-[12px] flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all shadow-md"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Restart</span>
+              </button>
+              <IconButton title="Dismiss" size="md" variant="ghost" onClick={reset}>
                 <X />
               </IconButton>
             </>
           ) : isRunning ? (
-            <IconButton title="Pause" variant="on" size="lg" onClick={pause}>
-              <Pause className="fill-current" />
-            </IconButton>
-          ) : (
-            <IconButton
-              title={timeLeft > 0 ? 'Resume' : 'Start 25 minutes'}
-              variant="on"
-              size="lg"
-              onClick={() => (timeLeft > 0 ? resume() : start(1500))}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                pause();
+              }}
+              className="h-9 px-5 rounded-full bg-white text-black font-semibold text-[12px] flex items-center gap-1.5 hover:bg-white/90 active:scale-95 transition-all shadow-md"
             >
-              <Play className="fill-current translate-x-px" />
-            </IconButton>
+              <Pause className="w-3.5 h-3.5 fill-current" />
+              <span>Pause</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (timeLeft > 0) resume();
+                else start(1500); // 25 min default
+              }}
+              className="h-9 px-5 rounded-full bg-[#FF9500] text-black font-semibold text-[12px] flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all shadow-[0_4px_16px_rgba(255,149,0,0.35)]"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>{timeLeft > 0 ? 'Resume' : 'Start 25m'}</span>
+            </button>
           )}
+
           {totalTime > 0 && !isFinished && (
-            <IconButton title="Reset" onClick={reset}>
+            <IconButton title="Reset timer" size="md" variant="ghost" onClick={reset}>
               <RotateCcw />
             </IconButton>
           )}

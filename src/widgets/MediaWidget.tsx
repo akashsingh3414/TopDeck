@@ -1,73 +1,120 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { IslandWidget } from './types';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
-import { IconButton, SectionLabel } from '../components/ui';
+import { IconButton } from '../components/ui';
+import { formatDuration } from '../utils/formatDuration';
+import { useMediaAccent } from '../hooks/useMediaAccent';
 
-// Clean application title to hide raw hex IDs (e.g. 308046B0AF4A39CB)
 const getCleanAppTitle = (raw?: string) => {
-  if (!raw) return 'Now Playing';
+  if (!raw) return 'Media';
   const clean = raw.toLowerCase();
   if (clean.includes('spotify')) return 'Spotify';
+  if (clean.includes('apple') || clean.includes('itunes') || clean.includes('music')) return 'Apple Music';
+  if (clean.includes('youtube')) return 'YouTube Music';
   if (clean.includes('edge') || clean.includes('msedge')) return 'Microsoft Edge';
   if (clean.includes('chrome')) return 'Google Chrome';
   if (clean.includes('brave')) return 'Brave Browser';
   if (clean.includes('firefox')) return 'Firefox';
-  if (clean.includes('apple') || clean.includes('itunes')) return 'Apple Music';
   if (clean.includes('vlc')) return 'VLC Media';
   if (/^[0-9a-fA-F!_.-]+$/.test(raw) || (raw.length > 10 && !raw.includes(' '))) {
-    return 'Now Playing';
+    return 'Media';
   }
   return raw.split('!')[0];
 };
 
-// Monochrome equalizer; bar heights are [min, max, durationMs, delayMs]
-const EQ_BARS: [number, number, number, number][] = [
-  [3, 10, 450, 0],
-  [4, 14, 600, 120],
-  [3, 9, 380, 240],
-  [4, 12, 520, 80],
+const EQ_BARS: [number, number][] = [
+  [3, 16],
+  [4, 20],
+  [3, 18],
+  [4, 22],
+  [3, 17],
+  [4, 21],
+  [3, 16],
 ];
 
-const Equalizer: React.FC<{ isPlaying: boolean; scale?: number }> = ({ isPlaying, scale = 1 }) => (
-  <div className="flex items-center gap-[2px] h-4 flex-shrink-0">
-    {EQ_BARS.map(([min, max, duration, delay], i) => (
-      <span
-        key={i}
-        className="w-[3px] rounded-full bg-ink transition-[height] duration-300"
-        style={{
-          height: `${(isPlaying ? max : min) * scale}px`,
-          animation: isPlaying ? `wavyBounce ${duration}ms cubic-bezier(0.4, 0, 0.2, 1) ${delay}ms infinite alternate` : 'none',
-        }}
-      />
-    ))}
-  </div>
-);
+const usePlaybackPosition = () => {
+  const position = useIslandStore((s) => s.media.position);
+  const duration = useIslandStore((s) => s.media.duration);
+  const isPlaying = useIslandStore((s) => s.media.isPlaying);
+  const [now, setNow] = useState(() => Date.now());
+  const [anchor, setAnchor] = useState(() => ({ position, timestamp: Date.now() }));
 
-// Graphite vinyl shown when the track has no thumbnail
+  useEffect(() => {
+    setAnchor({ position, timestamp: Date.now() });
+  }, [position, isPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  const elapsedPosition = isPlaying
+    ? anchor.position + (now - anchor.timestamp) / 1000
+    : position;
+  return Math.max(0, Math.min(duration > 0 ? duration : elapsedPosition, elapsedPosition));
+};
+
+const Equalizer: React.FC<{ isPlaying: boolean; scale?: number }> = ({ isPlaying, scale = 1 }) => {
+  const [levels, setLevels] = useState(() => EQ_BARS.map(([min]) => min));
+
+  useEffect(() => {
+    if (!isPlaying) {
+      setLevels(EQ_BARS.map(([min]) => min));
+      return;
+    }
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const animateBar = (index: number) => {
+      timers[index] = setTimeout(() => {
+        const [min, max] = EQ_BARS[index];
+        setLevels((current) => current.map((level, i) =>
+          i === index ? min + Math.random() * (max - min) : level
+        ));
+        animateBar(index);
+      }, 80 + Math.random() * 150);
+    };
+
+    EQ_BARS.forEach((_, index) => animateBar(index));
+    return () => timers.forEach(clearTimeout);
+  }, [isPlaying]);
+
+  return (
+    <div className="flex items-center gap-[2px] h-6 flex-shrink-0">
+      {EQ_BARS.map((_, i) => (
+        <span
+          key={i}
+          className="w-[1.5px] rounded-full bg-white/75 transition-[height] duration-100"
+          style={{ height: `${levels[i] * scale}px` }}
+        />
+      ))}
+    </div>
+  );
+};
+
 export const DefaultAnimatedCover: React.FC<{
   isPlaying: boolean;
   size: 'idle' | 'peek' | 'expanded';
   className?: string;
 }> = ({ isPlaying, size, className = '' }) => {
-  const disc = { idle: 'w-full h-full', peek: 'w-[22px] h-[22px]', expanded: 'w-[84px] h-[84px]' }[size];
-  const label = { idle: 'w-1.5 h-1.5', peek: 'w-2 h-2', expanded: 'w-7 h-7' }[size];
+  const disc = { idle: 'w-full h-full', peek: 'w-[24px] h-[24px]', expanded: 'w-[96px] h-[96px]' }[size];
+  const label = { idle: 'w-1.5 h-1.5', peek: 'w-2 h-2', expanded: 'w-8 h-8' }[size];
 
   return (
-    <div className={`relative w-full h-full flex items-center justify-center bg-[#1C1C1E] ${className}`}>
+    <div className={`relative w-full h-full flex items-center justify-center bg-[#151517] ${className}`}>
       <div
-        className={`relative ${disc} rounded-full flex items-center justify-center bg-[#0B0B0C] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]`}
-        style={{ animation: isPlaying ? 'vinylSpin 6s linear infinite' : 'none' }}
+        className={`relative ${disc} rounded-full flex items-center justify-center bg-[#0C0C0E] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12),0_4px_16px_rgba(0,0,0,0.8)]`}
+        style={{ animation: isPlaying ? 'vinylSpin 5s linear infinite' : 'none' }}
       >
         <div
-          className="absolute inset-0 rounded-full opacity-60"
+          className="absolute inset-0 rounded-full opacity-50"
           style={{
-            background:
-              'repeating-radial-gradient(circle, rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px, transparent 1px, transparent 3px)',
+            boxShadow: 'inset 0 0 0 1px rgba(255, 255, 255, 0.035)',
           }}
         />
-        <div className={`relative ${label} rounded-full bg-accent flex items-center justify-center`}>
-          {size === 'expanded' && <div className="w-2 h-2 rounded-full bg-black" />}
+        <div className={`relative ${label} rounded-full bg-[#007AFF] flex items-center justify-center shadow-inner`}>
+          {size === 'expanded' && <div className="w-2.5 h-2.5 rounded-full bg-black/80" />}
         </div>
       </div>
     </div>
@@ -77,7 +124,7 @@ export const DefaultAnimatedCover: React.FC<{
 const Artwork: React.FC<{ size: 'idle' | 'peek' | 'expanded'; className: string }> = ({ size, className }) => {
   const media = useIslandStore((s) => s.media);
   return (
-    <div className={`relative flex-shrink-0 overflow-hidden bg-[#1C1C1E] ${className}`}>
+    <div className={`relative flex-shrink-0 overflow-hidden bg-[#18181A] border border-white/10 ${className}`}>
       {media.albumArt ? (
         <img src={media.albumArt} alt="" className="w-full h-full object-cover" />
       ) : (
@@ -87,16 +134,66 @@ const Artwork: React.FC<{ size: 'idle' | 'peek' | 'expanded'; className: string 
   );
 };
 
-export const MediaIdle: React.FC = () => {
+export const MediaAmbientBackground: React.FC = () => {
   const media = useIslandStore((s) => s.media);
+  if (!media.isPlaying || !media.albumArt) return null;
 
   return (
-    <div className="flex items-center justify-between w-full h-full pl-2 pr-4 select-none">
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+      <img
+        src={media.albumArt}
+        alt=""
+        aria-hidden
+        className="absolute inset-0 h-full w-full scale-125 object-cover opacity-30 blur-2xl"
+      />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_0%,rgba(35,35,35,0.2),rgba(0,0,0,0.72)_78%)]" />
+    </div>
+  );
+};
+
+export const MediaIdle: React.FC = () => {
+  const media = useIslandStore((s) => s.media);
+  const accent = useMediaAccent();
+  const position = usePlaybackPosition();
+  const progress = media.duration > 0
+    ? Math.min(100, Math.max(0, (position / media.duration) * 100))
+    : 0;
+
+  return (
+    <div className="relative flex items-center justify-between w-full h-full pl-2 pr-3.5 select-none">
       <div className="flex items-center gap-2 min-w-0">
-        <Artwork size="idle" className="w-5 h-5 rounded-md" />
-        <span className="text-caption font-medium text-ink truncate max-w-[100px]">{media.title || 'Music'}</span>
+        <Artwork size="idle" className="w-[26px] h-[26px] rounded-md" />
+        <span className="text-[11px] font-medium text-white truncate max-w-[110px]">
+          {media.title || 'Media'}
+        </span>
       </div>
-      <Equalizer isPlaying={media.isPlaying} scale={0.85} />
+      <Equalizer isPlaying={media.isPlaying} scale={0.8} />
+      {media.duration > 0 && (
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden bg-white/[0.08]">
+          <div
+            className="h-full transition-[width] duration-500 ease-linear"
+            style={{ width: `${progress}%`, backgroundColor: accent }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const MediaProgressBar: React.FC = () => {
+  const accent = useMediaAccent();
+  const duration = useIslandStore((s) => s.media.duration);
+  const position = usePlaybackPosition();
+  const progress = duration > 0
+    ? Math.min(100, Math.max(0, (position / duration) * 100))
+    : 0;
+
+  return (
+    <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-[2px] overflow-hidden bg-white/[0.08]">
+      <div
+        className="h-full transition-[width] duration-500 ease-linear"
+        style={{ width: `${progress}%`, backgroundColor: accent }}
+      />
     </div>
   );
 };
@@ -105,12 +202,12 @@ export const MediaPeek: React.FC = () => {
   const media = useIslandStore((s) => s.media);
 
   return (
-    <div className="flex items-center justify-between w-full h-full pl-2 pr-5 select-none">
-      <div className="flex items-center gap-2.5 min-w-0">
+    <div className="flex items-center justify-between w-full h-full pl-2.5 pr-4 select-none">
+      <div className="flex items-center gap-3 min-w-0">
         <Artwork size="peek" className="w-8 h-8 rounded-lg" />
         <div className="flex flex-col min-w-0 leading-tight">
-          <span className="text-[12px] font-semibold text-ink truncate">{media.title || 'Track'}</span>
-          <span className="text-caption text-ink-muted truncate">
+          <span className="text-[13px] font-semibold text-white truncate">{media.title || 'Track'}</span>
+          <span className="text-[10px] text-white/60 truncate font-medium">
             {media.artist || getCleanAppTitle(media.appTitle)}
           </span>
         </div>
@@ -120,159 +217,109 @@ export const MediaPeek: React.FC = () => {
   );
 };
 
-// Green while comfortable, yellow when getting loud, red near max
-const volumeColor = (level: number) => (level >= 80 ? '#FF453A' : level >= 50 ? '#FFD60A' : '#30D158');
-
-// System volume. While dragging, the local value wins so helper echoes don't make the thumb jump.
-const VolumeSlider: React.FC = () => {
-  const { volume, muted } = useIslandStore((s) => s.audio);
-  const updateAudio = useIslandStore((s) => s.updateAudio);
-  const [dragValue, setDragValue] = useState<number | null>(null);
-  const lastSentRef = useRef(0);
-  // Briefly highlight the number whenever the level changes, including from keyboard volume keys
-  const [flash, setFlash] = useState(false);
-  const firstRenderRef = useRef(true);
-
-  useEffect(() => {
-    if (firstRenderRef.current) {
-      firstRenderRef.current = false;
-      return;
-    }
-    setFlash(true);
-    const t = setTimeout(() => setFlash(false), 1200);
-    return () => clearTimeout(t);
-  }, [volume]);
-
-  if (volume < 0) return null; // helper couldn't read the output device
-
-  const send = (level: number) => {
-    lastSentRef.current = Date.now();
-    window.islandAPI?.sendMediaCommand(`SET_VOLUME:${level}`);
-  };
-
-  const commit = () => {
-    if (dragValue === null) return;
-    send(dragValue);
-    updateAudio({ volume: dragValue, muted: dragValue > 0 ? false : muted });
-    setDragValue(null);
-  };
-
-  const value = dragValue ?? volume;
-  const color = muted ? '#636366' : volumeColor(value);
-  const active = dragValue !== null || flash;
-
-  return (
-    <>
-      {/* Custom bar; a transparent native range input on top handles dragging, clicks and arrow keys */}
-      <div className="group relative flex-1 min-w-0 h-4 flex items-center">
-        <div className="relative w-full h-1.5 rounded-full bg-white/[0.12]">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full transition-[background-color] duration-200"
-            style={{ width: `${value}%`, backgroundColor: color }}
-          />
-          <div
-            className={`absolute top-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_1px_4px_rgba(0,0,0,0.6)] transition-opacity duration-150 ${
-              active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            }`}
-            style={{ left: `${value}%` }}
-          />
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={value}
-          title={`Volume ${value}%`}
-          aria-label="Volume"
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => {
-            const level = Number(e.target.value);
-            setDragValue(level);
-            // Throttled so a drag doesn't flood the helper's command queue
-            if (Date.now() - lastSentRef.current > 120) send(level);
-          }}
-          onPointerUp={commit}
-          onKeyUp={commit}
-          onBlur={commit}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        />
-      </div>
-      {/* Live level in the bar's color; full strength while dragging or right after a change */}
-      <span
-        className={`w-[22px] flex-shrink-0 text-left text-caption font-semibold tabular-nums transition-opacity duration-200 ${
-          active ? 'opacity-100' : 'opacity-60'
-        }`}
-        style={{ color }}
-      >
-        {value}
-      </span>
-    </>
-  );
-};
-
 export const MediaExpanded: React.FC = () => {
   const media = useIslandStore((s) => s.media);
-  // Real system mute state reported by the native helper
-  const isMuted = useIslandStore((s) => s.audio.muted);
-  const updateAudio = useIslandStore((s) => s.updateAudio);
+  const accent = useMediaAccent();
+  const position = usePlaybackPosition();
 
   const send = (cmd: string) => {
-    // Optimistic flip; the helper echoes the actual state right after applying it
-    if (cmd === 'MUTE') updateAudio({ muted: !isMuted });
     window.islandAPI?.sendMediaCommand(cmd);
   };
 
+  const progressPercent = media.duration > 0
+    ? Math.min(100, Math.max(0, (position / media.duration) * 100))
+    : 0;
+  const canRestartCurrent = !media.canSkipPrevious && media.position > 3;
+  const canGoPrevious = media.canSkipPrevious || canRestartCurrent;
+
   return (
-    <div className="relative flex w-full h-full px-5 pb-4 pt-1 gap-3 select-none overflow-hidden">
-      {/* Soft ambient tint taken from the artwork */}
-      {media.albumArt && (
-        <img
-          src={media.albumArt}
-          alt=""
-          aria-hidden
-          className="absolute inset-0 w-full h-full object-cover blur-3xl scale-150 opacity-[0.18] pointer-events-none"
-        />
-      )}
+    <div className="relative flex w-full h-full px-5 pb-3 pt-0.5 gap-4 select-none overflow-hidden items-center">
+      {/* Album Artwork Squircle */}
+      <Artwork
+        size="expanded"
+        className="relative z-10 w-[160px] h-[160px] rounded-[22px] shadow-[0_12px_28px_rgba(0,0,0,0.7)] flex-shrink-0"
+      />
 
-      <Artwork size="expanded" className="relative w-[124px] h-[124px] rounded-2xl shadow-[0_8px_24px_rgba(0,0,0,0.6)]" />
-
-      {/* Title block and controls sit together, centered against the artwork */}
-      <div className="relative flex flex-col justify-center gap-3 flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-col min-w-0">
-            <SectionLabel>{getCleanAppTitle(media.appTitle)}</SectionLabel>
-            <span className="text-[15px] font-semibold text-ink truncate leading-snug mt-1">
-              {media.title || 'Nothing playing'}
-            </span>
-            <span className="text-[12px] text-ink-muted truncate">{media.artist || 'Windows Audio'}</span>
-          </div>
-          <div className="pt-0.5">
-            <Equalizer isPlaying={media.isPlaying} scale={0.8} />
-          </div>
+      {/* Media Info & Controls */}
+      <div
+        className={`relative z-10 grid flex-1 min-w-0 h-[128px] content-start py-0.5 overflow-hidden gap-1 ${
+          media.duration > 0
+            ? 'grid-rows-[16px_36px_24px_36px]'
+            : 'grid-rows-[16px_36px_36px]'
+        }`}
+      >
+        {/* Minimal playback activity indicator */}
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <span className="text-[10px] font-medium tracking-wide text-white/45">
+            {media.isPlaying ? 'PLAYING' : 'PAUSED'}
+          </span>
+          <Equalizer isPlaying={media.isPlaying} scale={0.8} />
         </div>
 
-        <div className="flex items-center justify-between">
+        {/* Track Title & Artist */}
+        <div className="flex min-w-0 flex-col justify-center">
+          <span className="truncate text-[15px] font-bold leading-snug tracking-tight text-white">
+            {media.title || 'No media playing'}
+          </span>
+          <span className="truncate text-[12px] font-medium text-white/60">
+            {media.artist || 'Windows Media Session'}
+          </span>
+        </div>
+
+        {/* Timeline / Progress Scrubber */}
+        {media.duration > 0 && (
+          <div className="flex flex-col justify-center gap-1">
+            <div className="w-full h-1 rounded-full bg-white/[0.12] overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${progressPercent}%`, backgroundColor: accent }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[9px] font-semibold text-white/45 tabular-nums">
+              <span>{formatDuration(position)}</span>
+              <span>{formatDuration(media.duration)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Playback controls; system volume lives in the System tab */}
+        <div className="flex items-center justify-start">
           <div className="flex items-center gap-1.5">
-            <IconButton title="Previous Track" onClick={() => send('PREVIOUS')}>
+            <IconButton
+              title={canRestartCurrent ? 'Restart current track' : 'Previous Track'}
+              size="sm"
+              variant="ghost"
+              disabled={!canGoPrevious}
+              onClick={() => send(canRestartCurrent ? 'RESTART_TRACK' : 'PREVIOUS')}
+            >
               <SkipBack className="fill-current" />
             </IconButton>
-            <IconButton
+
+            <button
+              type="button"
               title={media.isPlaying ? 'Pause' : 'Play'}
-              variant="primary"
-              size="lg"
-              onClick={() => send('TOGGLE')}
+              onClick={(e) => {
+                e.stopPropagation();
+                send('TOGGLE');
+              }}
+              className="w-9 h-9 rounded-full bg-white text-black hover:bg-white/90 hover:scale-105 active:scale-95 transition-all shadow-[0_2px_12px_rgba(255,255,255,0.14)] flex items-center justify-center cursor-pointer flex-shrink-0"
             >
-              {media.isPlaying ? <Pause className="fill-current" /> : <Play className="fill-current translate-x-px" />}
-            </IconButton>
-            <IconButton title="Next Track" onClick={() => send('NEXT')}>
+              {media.isPlaying ? (
+                <Pause className="w-4 h-4 fill-current" />
+              ) : (
+                <Play className="w-4 h-4 fill-current translate-x-0.5" />
+              )}
+            </button>
+
+            <IconButton
+              title="Next Track"
+              size="sm"
+              variant="ghost"
+              disabled={!media.canSkipNext}
+              onClick={() => send('NEXT')}
+            >
               <SkipForward className="fill-current" />
             </IconButton>
-          </div>
-          <div className="flex items-center gap-1.5 flex-1 min-w-0 ml-2">
-            <IconButton title={isMuted ? 'Unmute' : 'Mute'} variant={isMuted ? 'on' : 'ghost'} onClick={() => send('MUTE')}>
-              {isMuted ? <VolumeX /> : <Volume2 />}
-            </IconButton>
-            <VolumeSlider />
           </div>
         </div>
       </div>

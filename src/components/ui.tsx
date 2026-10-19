@@ -1,20 +1,23 @@
 import React from 'react';
 
-// Shared TopDeck primitives so every widget uses the same buttons, chips and surfaces.
+// Apple Atoll UI Primitives: Frosted glass buttons, chips, and micro typography
 
-type ButtonSize = 'sm' | 'md' | 'lg';
-type ButtonVariant = 'ghost' | 'on' | 'primary';
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
+export type ButtonVariant = 'ghost' | 'glass' | 'on' | 'primary' | 'warn';
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'w-6 h-6 [&_svg]:w-3.5 [&_svg]:h-3.5',
+  xs: 'w-5 h-5 [&_svg]:w-3 [&_svg]:h-3',
+  sm: 'w-7 h-7 [&_svg]:w-3.5 [&_svg]:h-3.5',
   md: 'w-8 h-8 [&_svg]:w-4 [&_svg]:h-4',
-  lg: 'w-10 h-10 [&_svg]:w-[18px] [&_svg]:h-[18px]',
+  lg: 'w-11 h-11 [&_svg]:w-5 [&_svg]:h-5',
 };
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  ghost: 'bg-white/[0.07] text-ink-muted hover:bg-white/[0.13] hover:text-ink',
-  on: 'bg-accent text-white hover:bg-accent-hover',
-  primary: 'bg-ink text-black hover:bg-white',
+  ghost: 'bg-white/[0.08] text-white/70 hover:bg-white/[0.16] hover:text-white',
+  glass: 'bg-white/[0.12] text-white/90 hover:bg-white/[0.22] hover:text-white border border-white/10 shadow-sm',
+  on: 'bg-[#007AFF] text-white hover:bg-[#0A84FF] shadow-[0_0_12px_rgba(0,122,255,0.4)]',
+  primary: 'bg-white text-black hover:bg-white/90 shadow-md',
+  warn: 'bg-[#FF9500] text-black hover:bg-[#FF9500]/90 shadow-[0_0_12px_rgba(255,149,0,0.4)]',
 };
 
 export const IconButton: React.FC<{
@@ -22,18 +25,20 @@ export const IconButton: React.FC<{
   onClick: () => void;
   size?: ButtonSize;
   variant?: ButtonVariant;
+  className?: string;
+  disabled?: boolean;
   children: React.ReactNode;
-}> = ({ title, onClick, size = 'md', variant = 'ghost', children }) => (
+}> = ({ title, onClick, size = 'md', variant = 'ghost', className = '', disabled = false, children }) => (
   <button
     type="button"
     title={title}
     aria-label={title}
+    disabled={disabled}
     onClick={(e) => {
-      // Clicks inside the island body collapse it, so controls must not bubble
       e.stopPropagation();
       onClick();
     }}
-    className={`flex-shrink-0 rounded-full flex items-center justify-center transition-colors duration-150 active:scale-90 ${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]}`}
+    className={`flex-shrink-0 rounded-full flex items-center justify-center transition-all duration-150 active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed disabled:active:scale-100 ${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} ${className}`}
   >
     {children}
   </button>
@@ -42,32 +47,30 @@ export const IconButton: React.FC<{
 export const Chip: React.FC<{
   onClick: () => void;
   active?: boolean;
+  className?: string;
   children: React.ReactNode;
-}> = ({ onClick, active = false, children }) => (
+}> = ({ onClick, active = false, className = '', children }) => (
   <button
     type="button"
     onClick={(e) => {
       e.stopPropagation();
       onClick();
     }}
-    className={`h-7 px-3 rounded-full text-caption font-medium tabular-nums transition-colors duration-150 active:scale-95 ${active
-        ? 'bg-accent/20 text-accent-hover'
-        : 'bg-white/[0.07] text-ink-muted hover:bg-white/[0.13] hover:text-ink'
-      }`}
+    className={`h-7 px-3 rounded-full text-[11px] font-medium tabular-nums transition-all duration-150 active:scale-95 flex items-center justify-center ${
+      active
+        ? 'bg-[#FF9500]/25 text-[#FF9500] border border-[#FF9500]/30 shadow-sm'
+        : 'bg-white/[0.08] text-white/70 hover:bg-white/[0.14] hover:text-white border border-white/[0.04]'
+    } ${className}`}
   >
     {children}
   </button>
 );
 
-export const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="text-micro font-semibold uppercase text-ink-faint truncate">{children}</span>
+export const SectionLabel: React.FC<{ children: React.ReactNode; className?: string }> = ({
+  children,
+  className = '',
+}) => (
+  <span className={`text-[10px] font-semibold uppercase tracking-wider text-white/45 truncate ${className}`}>
+    {children}
+  </span>
 );
-
-export const formatDuration = (sec: number) => {
-  const total = Math.max(0, Math.floor(sec));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const ss = s.toString().padStart(2, '0');
-  return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${ss}` : `${m}:${ss}`;
-};

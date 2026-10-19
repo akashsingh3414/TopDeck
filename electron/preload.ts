@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 export interface IslandAPI {
-  setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => void;
+  setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => void;
   updatePillBounds: (rect: { x: number; y: number; width: number; height: number }) => void;
   minimizeApp: () => void;
   closeApp: () => void;
@@ -14,8 +14,8 @@ export interface IslandAPI {
 }
 
 const api: IslandAPI = {
-  setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => {
-    ipcRenderer.send('set-ignore-mouse-events', ignore, forward ? { forward: true } : undefined);
+  setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => {
+    ipcRenderer.send('set-ignore-mouse-events', ignore, options);
   },
   updatePillBounds: (rect) => {
     ipcRenderer.send('update-pill-bounds', rect);

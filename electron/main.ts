@@ -15,11 +15,9 @@ let pillBoundsInScreen = { x: 0, y: 0, width: 0, height: 0 };
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.topdeck.windows');
 }
-let isMouseInsidePill = false;
-let hitTestInterval: NodeJS.Timeout | null = null;
 
-const WINDOW_WIDTH = 560;
-const WINDOW_HEIGHT = 280;
+const WINDOW_WIDTH = 580;
+const WINDOW_HEIGHT = 290;
 const TOP_OFFSET = 0;
 
 function repositionWindow(win: BrowserWindow) {
@@ -188,7 +186,7 @@ function createWindow() {
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
-    focusable: false,
+    focusable: true,
     type: 'toolbar',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -231,55 +229,7 @@ function createWindow() {
     }
   });
 
-  let leaveGraceTimer: NodeJS.Timeout | null = null;
-
-  // Smooth hit-testing loop to guarantee click-through outside the pill
-  hitTestInterval = setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-
-    // If pill bounds are 0 (e.g. hidden), ignore all
-    if (pillBoundsInScreen.width === 0 || pillBoundsInScreen.height === 0) {
-      if (!isMouseInsidePill) {
-        mainWindow.setIgnoreMouseEvents(true, { forward: true });
-      }
-      return;
-    }
-
-    const cursor = screen.getCursorScreenPoint();
-    const winBounds = mainWindow.getBounds();
-
-    const inside = (
-      cursor.x >= winBounds.x + pillBoundsInScreen.x &&
-      cursor.x <= winBounds.x + pillBoundsInScreen.x + pillBoundsInScreen.width &&
-      cursor.y >= winBounds.y + pillBoundsInScreen.y &&
-      cursor.y <= winBounds.y + pillBoundsInScreen.y + pillBoundsInScreen.height
-    );
-
-    if (inside) {
-      if (leaveGraceTimer) {
-        clearTimeout(leaveGraceTimer);
-        leaveGraceTimer = null;
-      }
-      if (!isMouseInsidePill) {
-        isMouseInsidePill = true;
-        mainWindow.setIgnoreMouseEvents(false);
-      }
-    } else {
-      if (isMouseInsidePill && !leaveGraceTimer) {
-        leaveGraceTimer = setTimeout(() => {
-          isMouseInsidePill = false;
-          leaveGraceTimer = null;
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.setIgnoreMouseEvents(true, { forward: true });
-          }
-        }, 150);
-      }
-    }
-  }, 40);
-
   mainWindow.on('closed', () => {
-    if (hitTestInterval) clearInterval(hitTestInterval);
-    if (leaveGraceTimer) clearTimeout(leaveGraceTimer);
     mainWindow = null;
   });
 }

@@ -6,7 +6,7 @@ import { DynamicIsland } from './components/DynamicIsland';
 declare global {
   interface Window {
     islandAPI?: {
-      setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => void;
+      setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => void;
       updatePillBounds: (rect: { x: number; y: number; width: number; height: number }) => void;
       minimizeApp: () => void;
       closeApp: () => void;
