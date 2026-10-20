@@ -102,7 +102,7 @@ export const DynamicIsland: React.FC = () => {
   // in Super Hide it stays a hairline until hovered
   const isVisible = !stealthMode || isHovered || pinned || state === 'expanded' || state === 'peek';
 
-  useIslandEvents({ nextWidget, prevWidget, toggleStealthMode, peekWidget, pillRef });
+  useIslandEvents({ nextWidget, prevWidget, peekWidget, pillRef });
   useNativeStateSync();
 
   if (isFullscreenHidden) {

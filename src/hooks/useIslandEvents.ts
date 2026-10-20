@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { useTimerStore } from '../store/useTimerStore';
 import { useClipboardStore } from '../store/useClipboardStore';
+import { useIslandStore } from '../store/useIslandStore';
 import { playTimerChime } from '../services/timerAudio';
 import { formatDuration } from '../utils/formatDuration';
 import type { PeekKind } from '../types/island';
@@ -9,7 +10,6 @@ import type { PeekKind } from '../types/island';
 interface IslandEventActions {
   nextWidget: () => void;
   prevWidget: () => void;
-  toggleStealthMode: () => void;
   peekWidget: (kind: PeekKind, durationMs?: number) => void;
   pillRef: RefObject<HTMLDivElement | null>;
 }
@@ -17,7 +17,6 @@ interface IslandEventActions {
 export const useIslandEvents = ({
   nextWidget,
   prevWidget,
-  toggleStealthMode,
   peekWidget,
   pillRef,
 }: IslandEventActions) => {
@@ -73,10 +72,15 @@ export const useIslandEvents = ({
     };
   }, []);
 
+  const stealthMode = useIslandStore((s) => s.stealthMode);
   useEffect(() => {
-    if (!window.islandAPI?.onToggleSuperHide) return;
-    return window.islandAPI.onToggleSuperHide(toggleStealthMode);
-  }, [toggleStealthMode]);
+    if (!window.islandAPI?.onSetSuperHide) return;
+    return window.islandAPI.onSetSuperHide((on) => useIslandStore.getState().setStealthMode(on));
+  }, []);
+
+  useEffect(() => {
+    window.islandAPI?.reportSuperHide?.(stealthMode);
+  }, [stealthMode]);
 
   useEffect(() => {
     window.islandAPI?.setIgnoreMouseEvents(true, { forward: true });

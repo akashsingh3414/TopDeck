@@ -8,6 +8,7 @@ let tray: Tray | null = null;
 let helperProcess: ChildProcessWithoutNullStreams | null = null;
 let helperRestartTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
+let superHidden = true;
 
 // Windows only shows toast notifications for an app with an AppUserModelID (matches build.appId)
 if (process.platform === 'win32') {
@@ -142,10 +143,11 @@ function createTray() {
   tray = new Tray(icon);
   tray.setToolTip('TopDeck for Windows');
 
-  const updateContextMenu = () => {
-    const isAutostart = app.getLoginItemSettings().openAtLogin;
+  const buildContextMenu = () => {
+    const login = app.getLoginItemSettings();
+    const isAutostart = login.executableWillLaunchAtLogin ?? login.openAtLogin;
 
-    const contextMenu = Menu.buildFromTemplate([
+    return Menu.buildFromTemplate([
       { label: 'TopDeck (Active)', enabled: false },
       { type: 'separator' },
       {
@@ -153,16 +155,17 @@ function createTray() {
         type: 'checkbox',
         checked: isAutostart,
         click: () => {
-          const nextState = !isAutostart;
-          app.setLoginItemSettings({ openAtLogin: nextState });
-          updateContextMenu();
+          app.setLoginItemSettings({ openAtLogin: !isAutostart, enabled: !isAutostart });
         },
       },
       {
-        label: 'Toggle Super Hide (Hover top edge)',
-        click: () => {
+        label: 'Super Hide',
+        type: 'checkbox',
+        checked: superHidden,
+        click: (item) => {
+          superHidden = item.checked;
           if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('toggle-super-hide');
+            mainWindow.webContents.send('set-super-hide', item.checked);
           }
         },
       },
@@ -171,14 +174,6 @@ function createTray() {
         click: () => {
           stopNativeHelper();
           startNativeHelper();
-        },
-      },
-      {
-        label: 'Reposition to Center',
-        click: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            repositionWindow(mainWindow);
-          }
         },
       },
       { type: 'separator' },
@@ -190,11 +185,9 @@ function createTray() {
         },
       },
     ]);
-
-    tray?.setContextMenu(contextMenu);
   };
 
-  updateContextMenu();
+  tray.on('right-click', () => tray?.popUpContextMenu(buildContextMenu()));
 }
 
 function createWindow() {
@@ -302,6 +295,10 @@ ipcMain.handle('notify', async (_event, title: string, body: string) => {
   // Silent: the renderer plays its own chime so the sound is the same whether or not toasts are enabled
   new Notification({ title, body, silent: true }).show();
   return true;
+});
+
+ipcMain.on('super-hide-state', (_event, on: boolean) => {
+  superHidden = !!on;
 });
 
 ipcMain.handle('clipboard-write', async (_event, text: string) => {

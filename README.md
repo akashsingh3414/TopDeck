@@ -62,7 +62,7 @@ TopDeck now launches each time you sign in. You can check or turn it off in **Se
 
 > Running from source (`npm start` / `npm run dev`)? Don't tick **Start with Windows** there. It registers the development copy of Electron, which opens a blank Electron window at sign-in instead of TopDeck. If that happened, untick it, or switch off the "Electron" entry in **Settings → Apps → Startup**.
 
-The tray menu also has **Toggle Super Hide**, **Reposition to Center**, **Restart Native Helper** (if media or Wi-Fi info stops updating), and **Quit TopDeck**.
+The tray menu also has a **Super Hide** checkbox (same as the eye button in the island), **Restart Native Helper** (if media or Wi-Fi info stops updating), and **Quit TopDeck**.
 
 ### Updating
 

@@ -9,7 +9,8 @@ declare global {
       setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => void;
       onMediaUpdate: (callback: (data: any) => void) => () => void;
       sendMediaCommand: (command: string) => Promise<boolean>;
-      onToggleSuperHide?: (callback: () => void) => () => void;
+      onSetSuperHide?: (callback: (on: boolean) => void) => () => void;
+      reportSuperHide?: (on: boolean) => void;
       openSettings?: (setting: string) => Promise<boolean>;
       notify?: (title: string, body: string) => Promise<boolean>;
       onClipboardChange?: (callback: (text: string) => void) => () => void;
