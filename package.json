@@ -1,6 +1,7 @@
 {
   "name": "topdeck-windows",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {

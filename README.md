@@ -13,8 +13,7 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
 * **Universal Music & Video HUD**
   * The **Home** tab keeps playback on the left: artwork, title, artist, progress, and Play/Pause, Next and Previous.
   * The right side has two tabs side by side, **Controls** (clock, Wi-Fi, Bluetooth, brightness, volume) and **Calendar**. Click one to switch to it.
-  * Works with **Spotify, YouTube (Chrome, Edge, Brave, Firefox), Apple Music, VLC, Windows Media Player**, and any app that shows up in Windows' media controls.
-  * Artwork stays correct across track changes, including songs from the same album and apps that fill in the title/artist late.
+  * Works with any app that reports to Windows' media controls (the media card in the volume/quick settings flyout), such as Spotify, Media Player, and YouTube or other media playing in Chrome, Edge, Brave or Firefox. Apps that don't report to Windows (for example, the classic VLC desktop app) won't show up.
 * **Wi-Fi & Bluetooth Quick Controls**
   * Tap the round icon to turn Wi-Fi or Bluetooth on/off.
   * Tap the rest of the tile to open a list:
@@ -24,7 +23,7 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
   * Lock-screen style clock (big hours and minutes, smaller seconds) in Controls, and a month calendar with ‹ › to change month.
   * iPhone-style battery icon with the percentage inside, with charging and low-battery states. Peeks automatically when you plug/unplug the charger and when power drops below 20%.
 * **Microphone Indicator**
-  * An orange mic appears next to the battery while any app is recording, like on iPhone. Hover it to see which app.
+  * An orange mic appears next to the battery while any app is recording, like on iPhone. Hover it to see which app (shown by its process name, e.g. `chrome`).
   * The island peeks briefly when the mic switches on.
 * **Focus Timer**
   * Presets: **5, 15, 25, 45 min and 1 h**, or set your own by clicking the minutes or seconds in the ring and typing (or scrolling / ↑↓), then Enter or **Start**. Shown as a progress ring.
@@ -35,7 +34,8 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
   * **Max items** (10, 25, 50 or 100) and **Delete after** (1 hour, 1 day, 7 days or 30 days) menus set how many items are kept and when they're removed automatically.
   * Delete single items or clear the whole list. Text only; items marked private by password managers are skipped.
 * **Stealth Mode (Super Hide)**
-  * Tucks the island into a 4px hairline at the top center of your screen, and it slides down when your cursor touches the top edge.
+  * On by default: the island tucks into a 4px hairline at the top center of your screen and slides down when your cursor touches the hairline. It still peeks briefly for track changes, charger and low-battery alerts, the mic switching on, and a finished timer.
+  * With Super Hide off, the collapsed island shows a running or finished timer, otherwise what's playing (or paused), or "No media playing".
 * **Plays Nicely with Windows**
   * Everything outside the island is click-through.
   * Hides itself in full-screen games, full-screen video and presentations.
@@ -73,7 +73,7 @@ Download the newer `TopDeck-X.X.X.exe` from Releases and run it. It upgrades you
 ## Controls & Shortcuts
 
 * **Hover** the island to expand it; move the pointer away to collapse it.
-* **Hover the top edge** (in Super Hide mode): the island slides down into view.
+* **Hover the hairline** at the top center (in Super Hide mode): the island slides down into view.
 * **Arrow Right (`→`) / Arrow Left (`←`)**: next / previous tab (Home → Timer → Clipboard).
 * **Header row** (expanded island)
   * `‹` `Home | Timer | Clipboard` `›`: switch tabs.
@@ -89,6 +89,7 @@ Download the newer `TopDeck-X.X.X.exe` from Releases and run it. It upgrades you
 * **Wi-Fi details need English Windows.** Network name, status and the network list are read from `netsh`, whose output is localized.
 * **Wi-Fi list:** shows what Windows last scanned, and joining a *new* network (password entry) is done in Windows Settings.
 * **Bluetooth list:** loading it takes 2–3 seconds. Connecting and pairing devices are left to Windows Settings.
+* **Clipboard history** only records while TopDeck is running, and is stored unencrypted in TopDeck's local app data on this PC.
 * **Notifications:** Windows may hide TopDeck's notification if notifications or Focus Assist / Do Not Disturb are blocking it. The chime and on-screen banner still work.
 
 ---
@@ -105,15 +106,15 @@ topdeck/
 │   ├── icon.svg / icon.png      # App + installer logo (SVG source, rendered PNG)
 │   └── tray.svg / tray.png      # System tray icon (SVG source, rendered PNG)
 ├── electron/
-│   ├── main.ts                  # Main process: window, click-through hit-testing, tray, notifications, IPC
+│   ├── main.ts                  # Main process: window, click-through, tray, notifications, clipboard watcher, IPC
 │   └── preload.ts               # Secure typed contextBridge API
 ├── native/
 │   ├── helper.ps1               # Native helper startup and polling loop
 │   └── modules/
 │       ├── Commands.ps1         # IPC command routing
 │       ├── Media.ps1            # Windows media-session state and track metadata
-│       ├── SystemState.ps1      # Battery, radios, audio, brightness, and fullscreen state
-│       └── NativeInterop.ps1    # Win32 input/window and Core Audio interop
+│       ├── SystemState.ps1      # Battery, radios, audio, brightness, mic, and fullscreen state
+│       └── NativeInterop.ps1    # Win32 input/window and Core Audio (volume, mic) interop
 ├── scripts/
 │   └── make-icon.js             # Renders the SVG logos to PNG (npx electron scripts/make-icon.js)
 ├── src/
@@ -121,7 +122,8 @@ topdeck/
 │   │   ├── DynamicIsland.tsx    # Island shell, header controls, spring physics
 │   │   └── ui.tsx               # Shared buttons and chips
 │   ├── hooks/
-│   │   ├── useIslandEvents.ts   # Island lifecycle, keyboard, and timer events
+│   │   ├── useIslandEvents.ts   # Island lifecycle, keyboard, timer, and clipboard events
+│   │   ├── useMediaAccent.ts    # Accent color taken from the current artwork
 │   │   └── useNativeStateSync.ts # Native helper event subscription
 │   ├── store/
 │   │   ├── useIslandStore.ts    # Island, media, audio, radio, and list state
@@ -159,7 +161,7 @@ The island uses a layered charcoal-black surface, with a restrained blue accent 
 # Run with live HMR (frontend + Electron)
 npm run dev
 
-# Run compiled build locally (with automatic process cleanup)
+# Run the last compiled build (run npm run build first)
 npm start
 
 # Compile production bundle
@@ -170,8 +172,20 @@ npm run dist
 ```
 
 Changes to `electron/main.ts` or `electron/preload.ts` need a full restart of the app (not just a reload). Changes to `native/helper.ps1` or any file under `native/modules/` take effect after **Restart Native Helper** in the tray menu.
+
+### Releasing
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`). To publish a new version:
+
+```bash
+npm version patch   # or minor / major: bumps package.json and creates the tag
+git push --follow-tags
+```
+
+Pushing the `vX.Y.Z` tag builds `TopDeck-X.Y.Z.exe` on Windows and publishes it as a GitHub release with notes generated from the commits. The build stops if the tag and the `package.json` version differ.
+
 ---
 
 ## License
 
-MIT License.
+MIT License. See [LICENSE](LICENSE).

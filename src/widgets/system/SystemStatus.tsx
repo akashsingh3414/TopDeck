@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Bluetooth, Wifi, WifiOff, BluetoothOff, Mic } from 'lucide-react';
 import { useIslandStore } from '../../store/useIslandStore';
-import { useMediaAccent } from '../../hooks/useMediaAccent';
 
 const useNow = () => {
   const [now, setNow] = useState(() => new Date());
@@ -48,41 +47,6 @@ export const BatteryIndicator: React.FC = () => {
       </span>
       <span className="w-[2px] h-[5px] ml-[1px] rounded-r-sm bg-white/45" />
     </span>
-  );
-};
-
-export const ClockIdle: React.FC = () => {
-  const now = useNow();
-  const radios = useIslandStore((s) => s.radios);
-  const accent = useMediaAccent();
-  const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  const date = now.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: '2-digit',
-  });
-
-  return (
-    <div className="flex items-center w-full h-full gap-2.5 px-3 select-none">
-      <span className="text-[13px] font-semibold tracking-tight text-white tabular-nums">{time}</span>
-      <span
-        className="whitespace-nowrap text-[10px] font-medium tracking-tight"
-        style={{ color: accent }}
-      >
-        {date}
-      </span>
-      <div className="ml-auto flex flex-shrink-0 items-center gap-2">
-        {radios.wifiEnabled && radios.wifiConnected && (
-          <Wifi className="w-3.5 h-3.5 text-white/75" aria-label="Wi-Fi connected" />
-        )}
-        {radios.btEnabled && radios.btConnected && (
-          <Bluetooth className="w-3.5 h-3.5 text-white/75" aria-label="Bluetooth connected" />
-        )}
-        <MicIndicator />
-        <BatteryIndicator />
-      </div>
-    </div>
   );
 };
 

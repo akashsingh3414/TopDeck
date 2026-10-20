@@ -57,9 +57,10 @@ interface IslandStore {
 
 const getInitialStealth = () => {
   try {
-    return localStorage.getItem('island_super_hidden') === 'true';
+    // Super Hide is on unless the user has switched it off
+    return localStorage.getItem('island_super_hidden') !== 'false';
   } catch {
-    return false;
+    return true;
   }
 };
 

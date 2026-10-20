@@ -3,10 +3,10 @@ import { motion, AnimatePresence, Transition, Variants, useReducedMotion } from 
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
 import { HomeExpanded } from '../widgets/HomeWidget';
-import { MediaAmbientBackground, MediaIdle, MediaPeek, MediaProgressBar } from '../widgets/MediaWidget';
+import { MediaAmbientBackground, MediaIdle, MediaPeek } from '../widgets/MediaWidget';
 import { TimerExpanded, TimerIdle, TimerPeek } from '../widgets/TimerWidget';
 import { ClipboardExpanded } from '../widgets/ClipboardWidget';
-import { ClockIdle, ClockPeek } from '../widgets/system/SystemStatus';
+import { ClockPeek } from '../widgets/system/SystemStatus';
 import { useTimerStore } from '../store/useTimerStore';
 import { useIslandEvents } from '../hooks/useIslandEvents';
 import { useNativeStateSync } from '../hooks/useNativeStateSync';
@@ -86,7 +86,6 @@ export const DynamicIsland: React.FC = () => {
     stealthMode,
     toggleStealthMode,
     isFullscreenHidden,
-    media,
     peekKind,
   } = useIslandStore();
 
@@ -99,6 +98,8 @@ export const DynamicIsland: React.FC = () => {
   const timerRunning = useTimerStore((s) => s.isRunning);
   const timerFinished = useTimerStore((s) => s.isFinished);
 
+  // Collapsed, the island shows a running/finished timer or media (or "No media playing");
+  // in Super Hide it stays a hairline until hovered
   const isVisible = !stealthMode || isHovered || pinned || state === 'expanded' || state === 'peek';
 
   useIslandEvents({ nextWidget, prevWidget, toggleStealthMode, peekWidget, pillRef });
@@ -151,10 +152,10 @@ export const DynamicIsland: React.FC = () => {
       );
     }
 
-    // 1. Idle View: Timer (running or on its tab) > Playing Media > Clock
+    // 1. Idle View: Timer (running or finished) > Media (playing, paused or none)
     if (state === 'idle') {
-      if (timerRunning || timerFinished || activeWidget === 'timer') return <TimerIdle />;
-      return media.isPlaying ? <MediaIdle /> : <ClockIdle />;
+      if (timerRunning || timerFinished) return <TimerIdle />;
+      return <MediaIdle />;
     }
 
     // 2. Peek View
@@ -329,14 +330,6 @@ export const DynamicIsland: React.FC = () => {
               }}
             >
               {renderContent()}
-              {/* A paused track keeps its progress line under the idle clock */}
-              {state === 'idle' &&
-                !timerRunning &&
-                !timerFinished &&
-                activeWidget !== 'timer' &&
-                !media.isPlaying &&
-                media.title &&
-                media.duration > 0 && <MediaProgressBar />}
             </motion.div>
           </AnimatePresence>
         </div>

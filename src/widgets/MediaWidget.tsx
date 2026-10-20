@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { Music, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
 import { formatDuration } from '../utils/formatDuration';
 import { useMediaAccent } from '../hooks/useMediaAccent';
@@ -160,6 +160,21 @@ export const MediaAmbientBackground: React.FC = () => {
 
 export const MediaIdle: React.FC = () => {
   const media = useIslandStore((s) => s.media);
+
+  if (!media.title) {
+    return (
+      <div className="flex items-center justify-center gap-1.5 w-full h-full select-none text-white/40">
+        <Music className="w-3 h-3" />
+        <span className="text-[11px] font-medium">No media playing</span>
+      </div>
+    );
+  }
+
+  return <MediaIdleTrack />;
+};
+
+const MediaIdleTrack: React.FC = () => {
+  const media = useIslandStore((s) => s.media);
   const accent = useMediaAccent();
   const position = usePlaybackPosition();
   const progress = media.duration > 0
@@ -183,24 +198,6 @@ export const MediaIdle: React.FC = () => {
           />
         </div>
       )}
-    </div>
-  );
-};
-
-export const MediaProgressBar: React.FC = () => {
-  const accent = useMediaAccent();
-  const duration = useIslandStore((s) => s.media.duration);
-  const position = usePlaybackPosition();
-  const progress = duration > 0
-    ? Math.min(100, Math.max(0, (position / duration) * 100))
-    : 0;
-
-  return (
-    <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-10 h-[2px] overflow-hidden bg-white/[0.08]">
-      <div
-        className="h-full transition-[width] duration-500 ease-linear"
-        style={{ width: `${progress}%`, backgroundColor: accent }}
-      />
     </div>
   );
 };

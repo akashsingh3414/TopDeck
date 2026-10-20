@@ -1,0 +1,42 @@
+# Builds the Windows installer and publishes a GitHub release whenever a version tag (v1.2.3) is pushed.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check tag matches package.json version
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Build installer
+        run: npm run dist -- --publish never
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TopDeck ${{ github.ref_name }}
+          generate_release_notes: true
+          files: release/TopDeck-*.exe
