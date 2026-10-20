@@ -1,8 +1,13 @@
 export type IslandState = 'idle' | 'peek' | 'expanded';
 
-export type WidgetType = 'clock' | 'media' | 'timer';
+export type WidgetType = 'home' | 'timer' | 'clipboard';
 
-export const WIDGET_ORDER: WidgetType[] = ['clock', 'media', 'timer'];
+export const WIDGET_ORDER: WidgetType[] = ['home', 'timer', 'clipboard'];
+
+// What a peek shows; media and system both live on the Home tab
+export type PeekKind = 'media' | 'system' | 'timer';
+
+export type HomeSection = 'controls' | 'calendar';
 
 export interface MediaTrack {
   title: string;
@@ -37,6 +42,11 @@ export interface WifiNetwork {
 export interface BluetoothDevice {
   name: string;
   connected: boolean;
+}
+
+export interface MicInfo {
+  active: boolean;
+  apps: string[]; // process names currently recording
 }
 
 export interface AudioInfo {

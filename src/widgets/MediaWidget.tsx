@@ -1,36 +1,43 @@
 import React, { useEffect, useState } from 'react';
-import { IslandWidget } from './types';
 import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useIslandStore } from '../store/useIslandStore';
-import { IconButton } from '../components/ui';
 import { formatDuration } from '../utils/formatDuration';
 import { useMediaAccent } from '../hooks/useMediaAccent';
 
-const getCleanAppTitle = (raw?: string) => {
-  if (!raw) return 'Media';
-  const clean = raw.toLowerCase();
-  if (clean.includes('spotify')) return 'Spotify';
-  if (clean.includes('apple') || clean.includes('itunes') || clean.includes('music')) return 'Apple Music';
-  if (clean.includes('youtube')) return 'YouTube Music';
-  if (clean.includes('edge') || clean.includes('msedge')) return 'Microsoft Edge';
-  if (clean.includes('chrome')) return 'Google Chrome';
-  if (clean.includes('brave')) return 'Brave Browser';
-  if (clean.includes('firefox')) return 'Firefox';
-  if (clean.includes('vlc')) return 'VLC Media';
-  if (/^[0-9a-fA-F!_.-]+$/.test(raw) || (raw.length > 10 && !raw.includes(' '))) {
-    return 'Media';
-  }
-  return raw.split('!')[0];
+// Windows reports the player as an app ID (e.g. "Spotify.exe", "MSEdge",
+// "Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic"); turn it into a readable name
+const SOURCE_NAMES: [string, string][] = [
+  ['spotify', 'Spotify'],
+  ['youtube', 'YouTube Music'],
+  ['zunemusic', 'Media Player'],
+  ['zunevideo', 'Movies & TV'],
+  ['applemusic', 'Apple Music'],
+  ['itunes', 'iTunes'],
+  ['msedge', 'Microsoft Edge'],
+  ['edge', 'Microsoft Edge'],
+  ['chrome', 'Google Chrome'],
+  ['brave', 'Brave'],
+  ['opera', 'Opera'],
+  ['vivaldi', 'Vivaldi'],
+  ['firefox', 'Mozilla Firefox'],
+  ['vlc', 'VLC'],
+];
+
+const getSourceName = (raw?: string) => {
+  const id = (raw || '').toLowerCase();
+  const known = SOURCE_NAMES.find(([key]) => id.includes(key));
+  if (known) return known[1];
+  // Firefox registers under a 16-hex-digit hash of its install path
+  if (/^[0-9a-f]{16}$/.test(id)) return 'Mozilla Firefox';
+  return 'Other source';
 };
 
 const EQ_BARS: [number, number][] = [
-  [3, 16],
-  [4, 20],
-  [3, 18],
-  [4, 22],
-  [3, 17],
+  [4, 16],
   [4, 21],
-  [3, 16],
+  [4, 18],
+  [4, 22],
+  [4, 17],
 ];
 
 const usePlaybackPosition = () => {
@@ -81,11 +88,11 @@ const Equalizer: React.FC<{ isPlaying: boolean; scale?: number }> = ({ isPlaying
   }, [isPlaying]);
 
   return (
-    <div className="flex items-center gap-[2px] h-6 flex-shrink-0">
+    <div className="flex items-center gap-[2.5px] h-6 flex-shrink-0">
       {EQ_BARS.map((_, i) => (
         <span
           key={i}
-          className="w-[1.5px] rounded-full bg-white/75 transition-[height] duration-100"
+          className="w-[3px] rounded-full bg-white/75 transition-[height] duration-100"
           style={{ height: `${levels[i] * scale}px` }}
         />
       ))}
@@ -98,8 +105,8 @@ export const DefaultAnimatedCover: React.FC<{
   size: 'idle' | 'peek' | 'expanded';
   className?: string;
 }> = ({ isPlaying, size, className = '' }) => {
-  const disc = { idle: 'w-full h-full', peek: 'w-[24px] h-[24px]', expanded: 'w-[96px] h-[96px]' }[size];
-  const label = { idle: 'w-1.5 h-1.5', peek: 'w-2 h-2', expanded: 'w-8 h-8' }[size];
+  const disc = { idle: 'w-full h-full', peek: 'w-[24px] h-[24px]', expanded: 'w-[58px] h-[58px]' }[size];
+  const label = { idle: 'w-1.5 h-1.5', peek: 'w-2 h-2', expanded: 'w-5 h-5' }[size];
 
   return (
     <div className={`relative w-full h-full flex items-center justify-center bg-[#151517] ${className}`}>
@@ -114,7 +121,7 @@ export const DefaultAnimatedCover: React.FC<{
           }}
         />
         <div className={`relative ${label} rounded-full bg-[#007AFF] flex items-center justify-center shadow-inner`}>
-          {size === 'expanded' && <div className="w-2.5 h-2.5 rounded-full bg-black/80" />}
+          {size === 'expanded' && <div className="w-1.5 h-1.5 rounded-full bg-black/80" />}
         </div>
       </div>
     </div>
@@ -208,7 +215,7 @@ export const MediaPeek: React.FC = () => {
         <div className="flex flex-col min-w-0 leading-tight">
           <span className="text-[13px] font-semibold text-white truncate">{media.title || 'Track'}</span>
           <span className="text-[10px] text-white/60 truncate font-medium">
-            {media.artist || getCleanAppTitle(media.appTitle)}
+            {media.artist || getSourceName(media.appTitle)}
           </span>
         </div>
       </div>
@@ -217,7 +224,30 @@ export const MediaPeek: React.FC = () => {
   );
 };
 
-export const MediaExpanded: React.FC = () => {
+// Bare playback icon: no circle, background or motion
+const ControlButton: React.FC<{
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}> = ({ title, disabled = false, onClick, children }) => (
+  <button
+    type="button"
+    title={title}
+    aria-label={title}
+    disabled={disabled}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
+    className="flex items-center justify-center text-white/85 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+  >
+    {children}
+  </button>
+);
+
+// Left half of the Home tab: artwork, track, progress and playback controls
+export const MediaPanel: React.FC = () => {
   const media = useIslandStore((s) => s.media);
   const accent = useMediaAccent();
   const position = usePlaybackPosition();
@@ -231,44 +261,37 @@ export const MediaExpanded: React.FC = () => {
     : 0;
   const canRestartCurrent = !media.canSkipPrevious && media.position > 3;
   const canGoPrevious = media.canSkipPrevious || canRestartCurrent;
+  const status = !media.title ? 'NOT PLAYING' : media.isPlaying ? 'PLAYING' : 'PAUSED';
 
   return (
-    <div className="relative flex w-full h-full px-5 pb-3 pt-0.5 gap-4 select-none overflow-hidden items-center">
-      {/* Album Artwork Squircle */}
-      <Artwork
-        size="expanded"
-        className="relative z-10 w-[160px] h-[160px] rounded-[22px] shadow-[0_12px_28px_rgba(0,0,0,0.7)] flex-shrink-0"
-      />
+    <div className="flex flex-col justify-between w-full h-full py-0.5 min-w-0 select-none">
+      <span className="truncate text-[10px] font-semibold uppercase tracking-wider text-white/55">
+        {media.title ? getSourceName(media.appTitle) : 'Media'}
+      </span>
 
-      {/* Media Info & Controls */}
-      <div
-        className={`relative z-10 grid flex-1 min-w-0 h-[128px] content-start py-0.5 overflow-hidden gap-1 ${
-          media.duration > 0
-            ? 'grid-rows-[16px_36px_24px_36px]'
-            : 'grid-rows-[16px_36px_36px]'
-        }`}
-      >
-        {/* Minimal playback activity indicator */}
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <span className="text-[10px] font-medium tracking-wide text-white/45">
-            {media.isPlaying ? 'PLAYING' : 'PAUSED'}
-          </span>
-          <Equalizer isPlaying={media.isPlaying} scale={0.8} />
-        </div>
-
-        {/* Track Title & Artist */}
-        <div className="flex min-w-0 flex-col justify-center">
-          <span className="truncate text-[15px] font-bold leading-snug tracking-tight text-white">
+      <div className="flex items-center gap-3 min-w-0">
+        <Artwork
+          size="expanded"
+          className="w-[76px] h-[76px] rounded-[16px] shadow-[0_8px_20px_rgba(0,0,0,0.6)]"
+        />
+        <div className="flex flex-col flex-1 min-w-0 gap-0.5">
+          <div className="flex items-center justify-between gap-2 min-w-0">
+            <span className="text-[9px] font-semibold tracking-wide text-white/45">{status}</span>
+            <Equalizer isPlaying={media.isPlaying} scale={0.6} />
+          </div>
+          <span className="truncate text-[14px] font-bold leading-snug tracking-tight text-white">
             {media.title || 'No media playing'}
           </span>
-          <span className="truncate text-[12px] font-medium text-white/60">
-            {media.artist || 'Windows Media Session'}
+          <span className="truncate text-[11px] font-medium text-white/60">
+            {media.title ? media.artist || getSourceName(media.appTitle) : 'Play something to control it here'}
           </span>
         </div>
+      </div>
 
-        {/* Timeline / Progress Scrubber */}
+      {/* Progress and controls stay together at the bottom */}
+      <div className="flex flex-col gap-1.5">
         {media.duration > 0 && (
-          <div className="flex flex-col justify-center gap-1">
+          <div className="flex flex-col gap-1">
             <div className="w-full h-1 rounded-full bg-white/[0.12] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-300"
@@ -282,56 +305,22 @@ export const MediaExpanded: React.FC = () => {
           </div>
         )}
 
-        {/* Playback controls; system volume lives in the System tab */}
-        <div className="flex items-center justify-start">
-          <div className="flex items-center gap-1.5">
-            <IconButton
-              title={canRestartCurrent ? 'Restart current track' : 'Previous Track'}
-              size="sm"
-              variant="ghost"
-              disabled={!canGoPrevious}
-              onClick={() => send(canRestartCurrent ? 'RESTART_TRACK' : 'PREVIOUS')}
-            >
-              <SkipBack className="fill-current" />
-            </IconButton>
-
-            <button
-              type="button"
-              title={media.isPlaying ? 'Pause' : 'Play'}
-              onClick={(e) => {
-                e.stopPropagation();
-                send('TOGGLE');
-              }}
-              className="w-9 h-9 rounded-full bg-white text-black hover:bg-white/90 hover:scale-105 active:scale-95 transition-all shadow-[0_2px_12px_rgba(255,255,255,0.14)] flex items-center justify-center cursor-pointer flex-shrink-0"
-            >
-              {media.isPlaying ? (
-                <Pause className="w-4 h-4 fill-current" />
-              ) : (
-                <Play className="w-4 h-4 fill-current translate-x-0.5" />
-              )}
-            </button>
-
-            <IconButton
-              title="Next Track"
-              size="sm"
-              variant="ghost"
-              disabled={!media.canSkipNext}
-              onClick={() => send('NEXT')}
-            >
-              <SkipForward className="fill-current" />
-            </IconButton>
-          </div>
+        <div className="flex items-center justify-center gap-5">
+          <ControlButton
+            title={canRestartCurrent ? 'Restart current track' : 'Previous Track'}
+            disabled={!canGoPrevious}
+            onClick={() => send(canRestartCurrent ? 'RESTART_TRACK' : 'PREVIOUS')}
+          >
+            <SkipBack className="w-4 h-4 fill-current" />
+          </ControlButton>
+          <ControlButton title={media.isPlaying ? 'Pause' : 'Play'} onClick={() => send('TOGGLE')}>
+            {media.isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+          </ControlButton>
+          <ControlButton title="Next Track" disabled={!media.canSkipNext} onClick={() => send('NEXT')}>
+            <SkipForward className="w-4 h-4 fill-current" />
+          </ControlButton>
         </div>
       </div>
     </div>
   );
-};
-
-export const MediaWidget: IslandWidget = {
-  id: 'media',
-  name: 'Media',
-  priority: 25,
-  idleView: MediaIdle,
-  peekView: MediaPeek,
-  expandedView: MediaExpanded,
 };

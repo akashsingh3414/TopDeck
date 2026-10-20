@@ -1,5 +1,4 @@
-import React from 'react';
-import { IslandWidget } from './types';
+import React, { useState } from 'react';
 import { Timer, Play, Pause, RotateCcw, Bell, X } from 'lucide-react';
 import { Chip, IconButton, SectionLabel } from '../components/ui';
 import { useTimerStore } from '../store/useTimerStore';
@@ -8,10 +7,65 @@ import { formatDuration } from '../utils/formatDuration';
 const PRESETS = [
   { label: '5m', seconds: 300 },
   { label: '15m', seconds: 900 },
-  { label: '25m (Pomodoro)', seconds: 1500 },
+  { label: '25m', seconds: 1500 },
   { label: '45m', seconds: 2700 },
   { label: '1h', seconds: 3600 },
 ];
+
+const MAX_MINUTES = 999;
+const DEFAULT_SECONDS = 1500; // 25 min
+
+// One editable part of the ring's time: click and type, scroll, or use ↑/↓. Enter starts the timer.
+const TimeField: React.FC<{
+  value: number;
+  max: number;
+  label: string;
+  onChange: (value: number) => void;
+  onSubmit: () => void;
+}> = ({ value, max, label, onChange, onSubmit }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const clamp = (n: number) => Math.min(max, Math.max(0, n));
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={label}
+      title={`${label}: type, scroll or use ↑/↓`}
+      value={draft ?? value.toString().padStart(2, '0')}
+      maxLength={max > 99 ? 3 : 2}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => {
+        setDraft(value.toString());
+        e.target.select();
+      }}
+      onBlur={() => setDraft(null)}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, '');
+        setDraft(digits);
+        onChange(clamp(Number(digits || 0)));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+          onSubmit();
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const next = clamp(value + (e.key === 'ArrowUp' ? 1 : -1));
+          setDraft(next.toString());
+          onChange(next);
+        }
+      }}
+      onWheel={(e) => {
+        const next = clamp(value + (e.deltaY < 0 ? 1 : -1));
+        if (draft !== null) setDraft(next.toString());
+        onChange(next);
+      }}
+      className="bg-transparent text-center text-[24px] font-bold tracking-tight text-white tabular-nums leading-none outline-none rounded-md cursor-text hover:bg-white/[0.08] focus:bg-white/[0.12] transition-colors"
+      style={{ width: max > 99 && value > 99 ? '2.1em' : '1.45em' }}
+    />
+  );
+};
 
 export const TimerIdle: React.FC = () => {
   const { timeLeft, totalTime, isFinished } = useTimerStore();
@@ -114,16 +168,45 @@ const ProgressRing: React.FC<{ fraction: number; finished: boolean; children: Re
 export const TimerExpanded: React.FC = () => {
   const { isRunning, isFinished, timeLeft, totalTime, start, pause, resume, reset } = useTimerStore();
 
+  const [draft, setDraft] = useState(DEFAULT_SECONDS);
+
   const fraction = totalTime > 0 ? timeLeft / totalTime : isFinished ? 0 : 1;
   const status = isFinished ? "Time's up" : isRunning ? 'Focusing' : timeLeft > 0 ? 'Paused' : 'Ready';
+  // Before a timer starts, the time in the ring is the duration picker
+  const editable = !isRunning && !isFinished && timeLeft === 0;
+  const draftMinutes = Math.floor(draft / 60);
+  const draftSeconds = draft % 60;
+  const startDraft = () => {
+    if (draft > 0) start(draft);
+  };
 
   return (
     <div className="flex w-full h-full px-5 pb-3 pt-1 gap-5 select-none items-center">
       {/* Progress Ring with Time */}
       <ProgressRing fraction={fraction} finished={isFinished}>
-        <span className="text-[24px] font-bold tracking-tight text-white tabular-nums leading-none">
-          {formatDuration(timeLeft)}
-        </span>
+        {editable ? (
+          <div className="flex items-center text-[24px] font-bold text-white leading-none">
+            <TimeField
+              label="Minutes"
+              value={draftMinutes}
+              max={MAX_MINUTES}
+              onChange={(m) => setDraft(m * 60 + draftSeconds)}
+              onSubmit={startDraft}
+            />
+            <span className="text-white/50 -mt-0.5">:</span>
+            <TimeField
+              label="Seconds"
+              value={draftSeconds}
+              max={59}
+              onChange={(sec) => setDraft(draftMinutes * 60 + sec)}
+              onSubmit={startDraft}
+            />
+          </div>
+        ) : (
+          <span className="text-[24px] font-bold tracking-tight text-white tabular-nums leading-none">
+            {formatDuration(timeLeft)}
+          </span>
+        )}
         <span
           className={`text-[9px] font-bold uppercase tracking-wider mt-1.5 ${
             isFinished ? 'text-[#FF453A]' : isRunning ? 'text-[#FF9500]' : 'text-white/45'
@@ -187,12 +270,12 @@ export const TimerExpanded: React.FC = () => {
               onClick={(e) => {
                 e.stopPropagation();
                 if (timeLeft > 0) resume();
-                else start(1500); // 25 min default
+                else startDraft();
               }}
               className="h-9 px-5 rounded-full bg-[#FF9500] text-black font-semibold text-[12px] flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition-all shadow-[0_4px_16px_rgba(255,149,0,0.35)]"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{timeLeft > 0 ? 'Resume' : 'Start 25m'}</span>
+              <span>{timeLeft > 0 ? 'Resume' : 'Start'}</span>
             </button>
           )}
 
@@ -205,13 +288,4 @@ export const TimerExpanded: React.FC = () => {
       </div>
     </div>
   );
-};
-
-export const TimerWidget: IslandWidget = {
-  id: 'timer',
-  name: 'Timer',
-  priority: 40,
-  idleView: TimerIdle,
-  peekView: TimerPeek,
-  expandedView: TimerExpanded,
 };

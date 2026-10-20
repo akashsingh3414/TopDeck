@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification } from 'electron';
+import { app, BrowserWindow, screen, ipcMain, Tray, Menu, nativeImage, shell, Notification, clipboard } from 'electron';
 import * as path from 'path';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as fs from 'fs';
@@ -8,8 +8,6 @@ let tray: Tray | null = null;
 let helperProcess: ChildProcessWithoutNullStreams | null = null;
 let helperRestartTimer: NodeJS.Timeout | null = null;
 let isQuitting = false;
-
-let pillBoundsInScreen = { x: 0, y: 0, width: 0, height: 0 };
 
 // Windows only shows toast notifications for an app with an AppUserModelID (matches build.appId)
 if (process.platform === 'win32') {
@@ -88,6 +86,36 @@ function startNativeHelper() {
   } catch (err) {
     console.error('Failed to spawn native helper:', err);
   }
+}
+
+// Clipboard history: poll the text clipboard and forward new copies to the renderer
+const CLIPBOARD_POLL_MS = 800;
+const CLIPBOARD_MAX_CHARS = 20000;
+let lastClipboardText = '';
+let clipboardTimer: NodeJS.Timeout | null = null;
+
+// Password managers mark secrets with these Windows formats so clipboard history skips them
+function isExcludedFromHistory() {
+  try {
+    if (clipboard.readBuffer('ExcludeClipboardContentFromMonitorProcessing').length > 0) return true;
+    const canInclude = clipboard.readBuffer('CanIncludeInClipboardHistory');
+    return canInclude.length >= 4 && canInclude.readUInt32LE(0) === 0;
+  } catch {
+    return false;
+  }
+}
+
+function startClipboardWatch() {
+  lastClipboardText = clipboard.readText();
+  clipboardTimer = setInterval(() => {
+    const text = clipboard.readText();
+    if (text === lastClipboardText) return;
+    lastClipboardText = text;
+    if (!text.trim() || text.length > CLIPBOARD_MAX_CHARS || isExcludedFromHistory()) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('clipboard-change', text);
+    }
+  }, CLIPBOARD_POLL_MS);
 }
 
 function stopNativeHelper() {
@@ -242,17 +270,6 @@ ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
   }
 });
 
-ipcMain.on('update-pill-bounds', (_event, rect) => {
-  if (rect && typeof rect.width === 'number') {
-    pillBoundsInScreen = rect;
-  }
-});
-
-ipcMain.on('close-app', () => {
-  isQuitting = true;
-  app.quit();
-});
-
 ipcMain.handle('media-command', async (_event, command: string) => {
   if (helperProcess && helperProcess.stdin && !helperProcess.stdin.destroyed) {
     try {
@@ -287,13 +304,12 @@ ipcMain.handle('notify', async (_event, title: string, body: string) => {
   return true;
 });
 
-ipcMain.handle('get-system-status', async () => {
-  return {
-    ok: true,
-    platform: process.platform,
-    helperRunning: !!helperProcess,
-    autostart: app.getLoginItemSettings().openAtLogin,
-  };
+ipcMain.handle('clipboard-write', async (_event, text: string) => {
+  if (typeof text !== 'string') return false;
+  // Remember it so the watcher doesn't report our own write as a new copy
+  lastClipboardText = text;
+  clipboard.writeText(text);
+  return true;
 });
 
 // Single instance lock
@@ -312,6 +328,7 @@ if (!gotTheLock) {
     createWindow();
     createTray();
     startNativeHelper();
+    startClipboardWatch();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -324,6 +341,7 @@ if (!gotTheLock) {
 app.on('before-quit', () => {
   isQuitting = true;
   stopNativeHelper();
+  if (clipboardTimer) clearInterval(clipboardTimer);
 });
 
 app.on('window-all-closed', () => {

@@ -8,11 +8,11 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
 
 * **A Calm, Compact Interface**
   * A softly layered charcoal-black island that blends into the top of your screen, with restrained highlights and color reserved for meaningful states.
-  * Expanded view has one header row: `‹ System | Media | Timer ›` with a sliding highlight, plus Pin and Super Hide on the right. Nothing overlaps the widget content.
+  * Expanded view has one header row: `‹ Home | Timer | Clipboard ›` with a sliding highlight, plus Pin and Super Hide on the right. Nothing overlaps the widget content.
   * The collapsed focus timer shows its progress at a glance; expanding the island keeps controls grouped by purpose.
 * **Universal Music & Video HUD**
-  * The Media tab focuses on playback: Play/Pause, Next and Previous, with live artwork, title, artist and playback progress when available.
-  * Adjust system volume and mute state from the System tab, alongside display brightness and connectivity controls.
+  * The **Home** tab keeps playback on the left: artwork, title, artist, progress, and Play/Pause, Next and Previous.
+  * The right side has two tabs side by side, **Controls** (clock, Wi-Fi, Bluetooth, brightness, volume) and **Calendar**. Click one to switch to it.
   * Works with **Spotify, YouTube (Chrome, Edge, Brave, Firefox), Apple Music, VLC, Windows Media Player**, and any app that shows up in Windows' media controls.
   * Artwork stays correct across track changes, including songs from the same album and apps that fill in the title/artist late.
 * **Wi-Fi & Bluetooth Quick Controls**
@@ -21,12 +21,19 @@ A Dynamic Island-style overlay for Windows 10 & 11. Built with **Electron + Reac
     * **Wi-Fi:** nearby networks. Tap a saved network to connect; anything else opens Windows Wi-Fi settings.
     * **Bluetooth:** paired devices and whether they're connected. Tap one to manage it in Windows Settings.
 * **Clock, Calendar & Battery**
-  * Large clock with seconds, weekday and full date.
-  * Battery bar with charging and low-battery states. Peeks automatically when you plug/unplug the charger and when power drops below 20%.
+  * Lock-screen style clock (big hours and minutes, smaller seconds) in Controls, and a month calendar with ‹ › to change month.
+  * iPhone-style battery icon with the percentage inside, with charging and low-battery states. Peeks automatically when you plug/unplug the charger and when power drops below 20%.
+* **Microphone Indicator**
+  * An orange mic appears next to the battery while any app is recording, like on iPhone. Hover it to see which app.
+  * The island peeks briefly when the mic switches on.
 * **Focus Timer**
-  * Presets: **1, 5, 15 and 25 min**, shown as a progress ring.
+  * Presets: **5, 15, 25, 45 min and 1 h**, or set your own by clicking the minutes or seconds in the ring and typing (or scrolling / ↑↓), then Enter or **Start**. Shown as a progress ring.
   * When it finishes: a chime, a Windows notification, and a "Time's up" banner that stays until you see it, with **Restart** and **Dismiss**.
   * Survives restarts. A running or paused timer picks up where it left off after you close TopDeck, reboot, or the PC sleeps.
+* **Clipboard History**
+  * Keeps the text you copy. Click an item to copy it again.
+  * **Max items** (10, 25, 50 or 100) and **Delete after** (1 hour, 1 day, 7 days or 30 days) menus set how many items are kept and when they're removed automatically.
+  * Delete single items or clear the whole list. Text only; items marked private by password managers are skipped.
 * **Stealth Mode (Super Hide)**
   * Tucks the island into a 4px hairline at the top center of your screen, and it slides down when your cursor touches the top edge.
 * **Plays Nicely with Windows**
@@ -67,13 +74,13 @@ Download the newer `TopDeck-X.X.X.exe` from Releases and run it. It upgrades you
 
 * **Hover** the island to expand it; move the pointer away to collapse it.
 * **Hover the top edge** (in Super Hide mode): the island slides down into view.
-* **Arrow Right (`→`) / Arrow Left (`←`)**: next / previous tab (System → Music → Timer).
+* **Arrow Right (`→`) / Arrow Left (`←`)**: next / previous tab (Home → Timer → Clipboard).
 * **Header row** (expanded island)
-  * `‹` `System | Music | Timer` `›`: switch tabs.
+  * `‹` `Home | Timer | Clipboard` `›`: switch tabs.
   * Pin: keep the island expanded even when the mouse leaves.
   * Super Hide: toggle stealth mode on/off.
-* **System tab:** adjust display brightness, system volume and mute, or manage Wi-Fi and Bluetooth.
-* **Media tab:** view track information and playback progress, and control playback.
+* **Home tab:** control playback on the left; on the right switch between Controls (brightness, volume and mute, Wi-Fi and Bluetooth) and Calendar.
+* **Clipboard tab:** click an item to copy it again, hover it and press × to delete it, or **Clear** to empty the list.
 
 ---
 
@@ -118,7 +125,8 @@ topdeck/
 │   │   └── useNativeStateSync.ts # Native helper event subscription
 │   ├── store/
 │   │   ├── useIslandStore.ts    # Island, media, audio, radio, and list state
-│   │   └── useTimerStore.ts     # Persistent focus timer state
+│   │   ├── useTimerStore.ts     # Persistent focus timer state
+│   │   └── useClipboardStore.ts # Clipboard history, limit and retention
 │   ├── types/
 │   │   └── island.ts            # Island dimensions, states, and data models
 │   ├── services/
@@ -126,11 +134,11 @@ topdeck/
 │   ├── utils/
 │   │   └── formatDuration.ts    # Shared time formatting
 │   ├── widgets/
-│   │   ├── ClockWidget.tsx      # System view composition
-│   │   ├── MediaWidget.tsx      # Track information, progress and playback controls
+│   │   ├── HomeWidget.tsx       # Home tab: media panel plus Controls / Calendar sections
+│   │   ├── MediaWidget.tsx      # Media idle/peek views and the Home media panel
 │   │   ├── TimerWidget.tsx      # Focus timer views and controls
-│   │   ├── system/              # Calendar, radio, status, and system-control modules
-│   │   └── types.ts             # Widget interface definition
+│   │   ├── ClipboardWidget.tsx  # Clipboard history list and settings
+│   │   └── system/              # Calendar, radio, status, and system-control modules
 │   ├── App.tsx                  # Root window shell (reduced-motion support)
 │   ├── index.css                # Base styles, keyframes, reduced-motion rules
 │   └── main.tsx                 # React root mount

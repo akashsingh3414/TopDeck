@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   Bluetooth,
   ChevronLeft,
-  ChevronRight,
   Loader2,
   Lock,
   Wifi,
@@ -10,7 +9,8 @@ import {
 import { useIslandStore } from '../../store/useIslandStore';
 import { BluetoothDevice, WifiNetwork } from '../../types/island';
 
-export const CompactRadioCapsule: React.FC<{
+// Round icon toggles the radio; the rest of the tile opens the network/device list
+export const RadioTile: React.FC<{
   icon: React.ReactNode;
   label: string;
   status: string;
@@ -18,49 +18,33 @@ export const CompactRadioCapsule: React.FC<{
   onOpenList: () => void;
   onToggle: () => void;
 }> = ({ icon, label, status, enabled, onOpenList, onToggle }) => (
-  <div className="flex items-center justify-between w-full h-[32px] px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.1] border border-white/[0.05] transition-all">
-    <div className="flex items-center gap-2 flex-1 min-w-0">
-      <div
-        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-          enabled ? 'bg-[#007AFF] text-white shadow-[0_0_8px_rgba(0,122,255,0.4)]' : 'bg-white/10 text-white/40'
-        }`}
-      >
-        {icon}
-      </div>
-      <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-        <span className="text-[11px] font-semibold text-white tracking-tight">{label}</span>
-        <span className="text-[10px] text-white/50 truncate font-normal">{status}</span>
-      </div>
-    </div>
-    <div className="flex items-center gap-2 flex-shrink-0 ml-1">
-      <button
-        type="button"
-        title={`Check available ${label} devices/networks`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpenList();
-        }}
-        className="w-5 h-5 rounded-md hover:bg-white/15 flex items-center justify-center text-white/50 hover:text-white transition-colors cursor-pointer"
-      >
-        <ChevronRight className="w-3.5 h-3.5" />
-      </button>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        title={`Turn ${label} ${enabled ? 'off' : 'on'}`}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
-        className={`w-7 h-4 rounded-full p-0.5 transition-colors duration-200 cursor-pointer flex items-center flex-shrink-0 ${
-          enabled ? 'bg-[#007AFF]' : 'bg-white/20'
-        }`}
-      >
-        <div className={`w-3 h-3 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-          enabled ? 'translate-x-3' : 'translate-x-0'
-        }`} />
-      </button>
+  <div
+    role="button"
+    title={label === 'Wi-Fi' ? 'Show Wi-Fi networks' : 'Show Bluetooth devices'}
+    onClick={(event) => {
+      event.stopPropagation();
+      onOpenList();
+    }}
+    className="flex items-center gap-1.5 flex-1 min-w-0 h-[34px] px-1.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.11] transition-colors cursor-pointer"
+  >
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      title={`Turn ${label} ${enabled ? 'off' : 'on'}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all cursor-pointer active:scale-90 ${
+        enabled ? 'bg-[#007AFF] text-white shadow-[0_0_8px_rgba(0,122,255,0.4)]' : 'bg-white/10 text-white/40 hover:bg-white/20'
+      }`}
+    >
+      {icon}
+    </button>
+    <div className="flex flex-col min-w-0 leading-tight">
+      <span className="text-[10px] font-semibold text-white truncate">{label}</span>
+      <span className="text-[9px] text-white/50 truncate">{status}</span>
     </div>
   </div>
 );

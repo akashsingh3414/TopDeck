@@ -139,6 +139,85 @@ public static class AudioHelper {
     }
 }
 
+// Core Audio capture sessions: which processes are recording from a microphone right now
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceEnumeratorAll {
+    [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection ppDevices);
+}
+
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceCollection {
+    [PreserveSig] int GetCount(out int pcDevices);
+    [PreserveSig] int Item(int nDevice, out IMMDevice ppDevice);
+}
+
+[ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionManager2 {
+    int NotImpl_GetAudioSessionControl();
+    int NotImpl_GetSimpleAudioVolume();
+    [PreserveSig] int GetSessionEnumerator(out IAudioSessionEnumerator sessionEnum);
+}
+
+[ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionEnumerator {
+    [PreserveSig] int GetCount(out int sessionCount);
+    [PreserveSig] int GetSession(int sessionIndex, out IAudioSessionControl2 session);
+}
+
+[ComImport, Guid("BFB7FF88-7239-4FC9-8FA2-07C950BE9C6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionControl2 {
+    [PreserveSig] int GetState(out int pRetVal);
+    int NotImpl_GetDisplayName();
+    int NotImpl_SetDisplayName();
+    int NotImpl_GetIconPath();
+    int NotImpl_SetIconPath();
+    int NotImpl_GetGroupingParam();
+    int NotImpl_SetGroupingParam();
+    int NotImpl_RegisterAudioSessionNotification();
+    int NotImpl_UnregisterAudioSessionNotification();
+    int NotImpl_GetSessionIdentifier();
+    int NotImpl_GetSessionInstanceIdentifier();
+    [PreserveSig] int GetProcessId(out uint pRetVal);
+}
+
+public static class MicHelper {
+    // Process IDs with an active capture session on any enabled microphone
+    public static int[] GetActiveCapturePids() {
+        var pids = new System.Collections.Generic.List<int>();
+        try {
+            var enumerator = (IMMDeviceEnumeratorAll)(new MMDeviceEnumeratorCom());
+            IMMDeviceCollection devices;
+            // eCapture = 1, DEVICE_STATE_ACTIVE = 1
+            if (enumerator.EnumAudioEndpoints(1, 1, out devices) != 0 || devices == null) return pids.ToArray();
+            int deviceCount;
+            devices.GetCount(out deviceCount);
+            for (int d = 0; d < deviceCount; d++) {
+                IMMDevice device;
+                if (devices.Item(d, out device) != 0 || device == null) continue;
+                Guid iid = typeof(IAudioSessionManager2).GUID;
+                object o;
+                if (device.Activate(ref iid, 23, IntPtr.Zero, out o) != 0) continue;
+                var manager = o as IAudioSessionManager2;
+                IAudioSessionEnumerator sessions;
+                if (manager == null || manager.GetSessionEnumerator(out sessions) != 0 || sessions == null) continue;
+                int sessionCount;
+                sessions.GetCount(out sessionCount);
+                for (int s = 0; s < sessionCount; s++) {
+                    IAudioSessionControl2 session;
+                    if (sessions.GetSession(s, out session) != 0 || session == null) continue;
+                    int state;
+                    uint pid;
+                    // AudioSessionStateActive = 1
+                    if (session.GetState(out state) == 0 && state == 1 && session.GetProcessId(out pid) == 0 && pid != 0 && !pids.Contains((int)pid)) {
+                        pids.Add((int)pid);
+                    }
+                }
+            }
+        } catch {}
+        return pids.ToArray();
+    }
+}
+
 public static class StdinListener {
     public static readonly ConcurrentQueue<string> Commands = new ConcurrentQueue<string>();
     private static Thread _thread;

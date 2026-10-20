@@ -1,17 +1,19 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence, Transition, Variants, useReducedMotion } from 'framer-motion';
 import { useIslandStore } from '../store/useIslandStore';
 import { STATE_DIMENSIONS, WIDGET_ORDER, WidgetType } from '../types/island';
-import { ClockWidget } from '../widgets/ClockWidget';
-import { MediaAmbientBackground, MediaProgressBar, MediaWidget } from '../widgets/MediaWidget';
-import { TimerWidget } from '../widgets/TimerWidget';
+import { HomeExpanded } from '../widgets/HomeWidget';
+import { MediaAmbientBackground, MediaIdle, MediaPeek, MediaProgressBar } from '../widgets/MediaWidget';
+import { TimerExpanded, TimerIdle, TimerPeek } from '../widgets/TimerWidget';
+import { ClipboardExpanded } from '../widgets/ClipboardWidget';
+import { ClockIdle, ClockPeek } from '../widgets/system/SystemStatus';
 import { useTimerStore } from '../store/useTimerStore';
 import { useIslandEvents } from '../hooks/useIslandEvents';
 import { useNativeStateSync } from '../hooks/useNativeStateSync';
 import {
-  SlidersHorizontal,
-  Music2,
+  House,
   Timer as TimerIcon,
+  ClipboardList,
   ChevronLeft,
   ChevronRight,
   Pin,
@@ -21,10 +23,10 @@ import {
 } from 'lucide-react';
 import { IconButton } from './ui';
 
-const TABS: { id: WidgetType; label: string; title: string; Icon: typeof SlidersHorizontal }[] = [
-  { id: 'clock', label: 'System', title: 'System & Control Center', Icon: SlidersHorizontal },
-  { id: 'media', label: 'Media', title: 'Media controls', Icon: Music2 },
+const TABS: { id: WidgetType; label: string; title: string; Icon: typeof House }[] = [
+  { id: 'home', label: 'Home', title: 'Media, controls & calendar', Icon: House },
   { id: 'timer', label: 'Timer', title: 'Focus Countdown Timer', Icon: TimerIcon },
+  { id: 'clipboard', label: 'Clipboard', title: 'Clipboard history', Icon: ClipboardList },
 ];
 
 // Apple SwiftUI Spring Physics
@@ -38,7 +40,6 @@ const atollSpring: Transition = {
 // Super-hide dimensions: hairline notch at the top center
 const SUPER_HIDE_WIDTH = 260;
 const SUPER_HIDE_HEIGHT = 4;
-const SUPER_HIDE_TRIGGER_HEIGHT = 12;
 const SUPER_HIDE_RADIUS = 3;
 
 // Subtle cross-fade & micro-slide variants for seamless widget transitions
@@ -86,7 +87,7 @@ export const DynamicIsland: React.FC = () => {
     toggleStealthMode,
     isFullscreenHidden,
     media,
-    hasUserSelectedTab,
+    peekKind,
   } = useIslandStore();
 
   const pillRef = useRef<HTMLDivElement>(null);
@@ -102,43 +103,6 @@ export const DynamicIsland: React.FC = () => {
 
   useIslandEvents({ nextWidget, prevWidget, toggleStealthMode, peekWidget, pillRef });
   useNativeStateSync();
-
-  // Report pill bounding rect to Electron main process for reference
-  useEffect(() => {
-    const updateBounds = () => {
-      if (window.islandAPI) {
-        const windowWidth = window.innerWidth;
-        if (isFullscreenHidden) {
-          window.islandAPI.updatePillBounds({ x: 0, y: 0, width: 0, height: 0 });
-          return;
-        }
-
-        if (!isVisible) {
-          const centerX = Math.round((windowWidth - SUPER_HIDE_WIDTH) / 2);
-          window.islandAPI.updatePillBounds({
-            x: centerX,
-            y: 0,
-            width: SUPER_HIDE_WIDTH,
-            height: SUPER_HIDE_TRIGGER_HEIGHT,
-          });
-          return;
-        }
-
-        const dim = STATE_DIMENSIONS[state];
-        const targetX = Math.round((windowWidth - dim.width) / 2);
-        window.islandAPI.updatePillBounds({
-          x: targetX,
-          y: 0,
-          width: dim.width,
-          height: dim.height,
-        });
-      }
-    };
-
-    updateBounds();
-    window.addEventListener('resize', updateBounds);
-    return () => window.removeEventListener('resize', updateBounds);
-  }, [state, isFullscreenHidden, isVisible]);
 
   if (isFullscreenHidden) {
     return null;
@@ -187,43 +151,24 @@ export const DynamicIsland: React.FC = () => {
       );
     }
 
-    // 1. Idle View: Prioritize active running states (Timer > Playing Media > Clock)
+    // 1. Idle View: Timer (running or on its tab) > Playing Media > Clock
     if (state === 'idle') {
-      if (timerRunning || timerFinished) {
-        return <TimerWidget.idleView />;
-      }
-      if (media.isPlaying) {
-        return <MediaWidget.idleView />;
-      }
-      switch (activeWidget) {
-        case 'media':
-          return (hasUserSelectedTab || media.isPlaying) ? <MediaWidget.idleView /> : <ClockWidget.idleView />;
-        case 'timer':
-          return <TimerWidget.idleView />;
-        case 'clock':
-        default:
-          return <ClockWidget.idleView />;
-      }
+      if (timerRunning || timerFinished || activeWidget === 'timer') return <TimerIdle />;
+      return media.isPlaying ? <MediaIdle /> : <ClockIdle />;
     }
 
     // 2. Peek View
     if (state === 'peek') {
-      switch (activeWidget) {
-        case 'media':
-          return <MediaWidget.peekView />;
-        case 'timer':
-          return <TimerWidget.peekView />;
-        case 'clock':
-        default:
-          return <ClockWidget.peekView />;
-      }
+      if (peekKind === 'media') return <MediaPeek />;
+      if (peekKind === 'timer') return <TimerPeek />;
+      return <ClockPeek />;
     }
 
     // 3. Expanded View
     if (state === 'expanded') {
       return (
         <div className="flex flex-col w-full h-full">
-          {/* Header Bar: [<] [System | Music | Timer] [>]  ....  [Pin] [Super Hide] */}
+          {/* Header Bar: [<] [Home | Timer | Clipboard] [>]  ....  [Pin] [Super Hide] */}
           <div
             className="flex items-center justify-between h-11 px-3 pt-1 flex-shrink-0"
             onClick={(e) => e.stopPropagation()}
@@ -251,7 +196,7 @@ export const DynamicIsland: React.FC = () => {
                         e.stopPropagation();
                         setActiveWidget(id, WIDGET_ORDER.indexOf(id) >= WIDGET_ORDER.indexOf(activeWidget) ? 1 : -1);
                       }}
-                      className={`relative h-6 px-3 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all duration-150 cursor-pointer ${
+                      className={`relative h-6 px-2.5 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all duration-150 cursor-pointer ${
                         isActive ? 'text-white' : 'text-white/60 hover:text-white/90'
                       }`}
                     >
@@ -307,9 +252,9 @@ export const DynamicIsland: React.FC = () => {
 
           {/* Widget Body */}
           <div className="flex-1 w-full min-h-0 overflow-hidden">
-            {activeWidget === 'clock' && <ClockWidget.expandedView />}
-            {activeWidget === 'media' && <MediaWidget.expandedView />}
-            {activeWidget === 'timer' && <TimerWidget.expandedView />}
+            {activeWidget === 'home' && <HomeExpanded />}
+            {activeWidget === 'timer' && <TimerExpanded />}
+            {activeWidget === 'clipboard' && <ClipboardExpanded />}
           </div>
         </div>
       );
@@ -369,7 +314,7 @@ export const DynamicIsland: React.FC = () => {
         >
           <AnimatePresence custom={slideDirection} mode="wait">
             <motion.div
-              key={`${state}-${activeWidget}-${isVisible}`}
+              key={`${state}-${state === 'peek' ? peekKind : activeWidget}-${isVisible}`}
               custom={slideDirection}
               variants={contentSlideVariants}
               initial="enter"
@@ -384,11 +329,12 @@ export const DynamicIsland: React.FC = () => {
               }}
             >
               {renderContent()}
+              {/* A paused track keeps its progress line under the idle clock */}
               {state === 'idle' &&
                 !timerRunning &&
                 !timerFinished &&
-                activeWidget !== 'media' &&
                 activeWidget !== 'timer' &&
+                !media.isPlaying &&
                 media.title &&
                 media.duration > 0 && <MediaProgressBar />}
             </motion.div>

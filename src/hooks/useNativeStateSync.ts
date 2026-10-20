@@ -7,6 +7,7 @@ export const useNativeStateSync = () => {
     updateBattery,
     updateRadios,
     updateAudio,
+    updateMic,
     updateBrightness,
     setWifiNetworks,
     setBtDevices,
@@ -52,6 +53,11 @@ export const useNativeStateSync = () => {
           muted: !!data.muted,
           volume: typeof data.volume === 'number' ? data.volume : -1,
         });
+      } else if (data.type === 'mic') {
+        updateMic({
+          active: !!data.active,
+          apps: Array.isArray(data.apps) ? data.apps : [],
+        });
       } else if (data.type === 'brightness') {
         if (typeof data.level === 'number') updateBrightness(data.level);
       } else if (data.type === 'wifiList') {
@@ -67,6 +73,7 @@ export const useNativeStateSync = () => {
     updateBattery,
     updateRadios,
     updateAudio,
+    updateMic,
     updateBrightness,
     setWifiNetworks,
     setBtDevices,

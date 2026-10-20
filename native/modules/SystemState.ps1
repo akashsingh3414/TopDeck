@@ -183,3 +183,17 @@ function Get-BrightnessState {
     } catch {}
     return $null
 }
+
+# Apps recording from a microphone right now, from Core Audio capture sessions (no admin needed)
+function Get-MicState {
+    try {
+        $apps = @()
+        foreach ($procId in [MicHelper]::GetActiveCapturePids()) {
+            $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+            if ($proc -and $apps -notcontains $proc.ProcessName) { $apps += $proc.ProcessName }
+        }
+        return @{ type = "mic"; active = ($apps.Count -gt 0); apps = $apps }
+    } catch {
+        return $null
+    }
+}

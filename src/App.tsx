@@ -7,15 +7,13 @@ declare global {
   interface Window {
     islandAPI?: {
       setIgnoreMouseEvents: (ignore: boolean, options?: { forward?: boolean }) => void;
-      updatePillBounds: (rect: { x: number; y: number; width: number; height: number }) => void;
-      minimizeApp: () => void;
-      closeApp: () => void;
       onMediaUpdate: (callback: (data: any) => void) => () => void;
       sendMediaCommand: (command: string) => Promise<boolean>;
-      getSystemStatus: () => Promise<any>;
       onToggleSuperHide?: (callback: () => void) => () => void;
       openSettings?: (setting: string) => Promise<boolean>;
       notify?: (title: string, body: string) => Promise<boolean>;
+      onClipboardChange?: (callback: (text: string) => void) => () => void;
+      writeClipboard?: (text: string) => Promise<boolean>;
     };
   }
 }

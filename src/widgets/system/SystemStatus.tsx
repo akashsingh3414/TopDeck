@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bluetooth, Wifi, WifiOff, BluetoothOff } from 'lucide-react';
+import { Bluetooth, Wifi, WifiOff, BluetoothOff, Mic } from 'lucide-react';
 import { useIslandStore } from '../../store/useIslandStore';
 import { useMediaAccent } from '../../hooks/useMediaAccent';
 
@@ -12,12 +12,49 @@ const useNow = () => {
   return now;
 };
 
+// iPhone style orange mic, shown only while an app is recording
+export const MicIndicator: React.FC = () => {
+  const mic = useIslandStore((s) => s.mic);
+  if (!mic.active) return null;
+  const label = `Microphone in use${mic.apps.length ? ` by ${mic.apps.join(', ')}` : ''}`;
+
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="w-[18px] h-[18px] rounded-full bg-[#FF9F0A]/20 flex items-center justify-center flex-shrink-0"
+    >
+      <Mic className="w-3 h-3 text-[#FF9F0A]" />
+    </span>
+  );
+};
+
+// iPhone/Mac style battery: the level fills the body and the percentage sits inside it
+export const BatteryIndicator: React.FC = () => {
+  const battery = useIslandStore((s) => s.battery);
+  const percent = Math.min(100, Math.max(0, battery.percent));
+  const isLow = percent <= 20 && !battery.isCharging;
+  const fill = battery.isCharging ? 'bg-[#30D158]' : isLow ? 'bg-[#FF453A]' : 'bg-white/40';
+
+  const label = battery.isCharging ? `Charging, ${percent}%` : `Battery ${percent}%`;
+
+  return (
+    <span title={label} aria-label={label} className="flex items-center flex-shrink-0">
+      <span className="relative w-[27px] h-[13px] rounded-[4px] border border-white/45 overflow-hidden">
+        <span className={`absolute inset-y-0 left-0 ${fill}`} style={{ width: `${percent}%` }} />
+        <span className="relative flex items-center justify-center h-full text-[8.5px] font-bold text-white tabular-nums leading-none">
+          {percent}
+        </span>
+      </span>
+      <span className="w-[2px] h-[5px] ml-[1px] rounded-r-sm bg-white/45" />
+    </span>
+  );
+};
+
 export const ClockIdle: React.FC = () => {
   const now = useNow();
-  const battery = useIslandStore((s) => s.battery);
   const radios = useIslandStore((s) => s.radios);
   const accent = useMediaAccent();
-  const isLow = battery.percent <= 20 && !battery.isCharging;
   const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   const date = now.toLocaleDateString('en-GB', {
     weekday: 'short',
@@ -42,14 +79,8 @@ export const ClockIdle: React.FC = () => {
         {radios.btEnabled && radios.btConnected && (
           <Bluetooth className="w-3.5 h-3.5 text-white/75" aria-label="Bluetooth connected" />
         )}
-        <span
-          title={battery.isCharging ? `Charging, ${battery.percent}%` : `Battery ${battery.percent}%`}
-          className={`text-[11px] font-medium tabular-nums ${
-            isLow ? 'text-[#FF453A]' : battery.isCharging ? 'text-[#30D158]' : 'text-white/70'
-          }`}
-        >
-          {battery.percent}%
-        </span>
+        <MicIndicator />
+        <BatteryIndicator />
       </div>
     </div>
   );
@@ -57,7 +88,6 @@ export const ClockIdle: React.FC = () => {
 
 export const ClockPeek: React.FC = () => {
   const now = useNow();
-  const battery = useIslandStore((s) => s.battery);
   const radios = useIslandStore((s) => s.radios);
   const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   const date = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -75,16 +105,8 @@ export const ClockPeek: React.FC = () => {
         {radios.btEnabled
           ? <Bluetooth className="w-3.5 h-3.5 text-[#007AFF]" />
           : <BluetoothOff className="w-3.5 h-3.5 text-white/30" />}
-        <span
-          title={battery.isCharging ? `Charging, ${battery.percent}%` : `Battery ${battery.percent}%`}
-          className={`text-[11px] font-medium tabular-nums ${
-            battery.percent <= 20 && !battery.isCharging
-              ? 'text-[#FF453A]'
-              : battery.isCharging ? 'text-[#30D158]' : 'text-white'
-          }`}
-        >
-          {battery.percent}%
-        </span>
+        <MicIndicator />
+        <BatteryIndicator />
       </div>
     </div>
   );

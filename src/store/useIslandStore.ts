@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { IslandState, WidgetType, MediaTrack, RadiosInfo, AudioInfo, WifiNetwork, BluetoothDevice, WIDGET_ORDER } from '../types/island';
+import { IslandState, WidgetType, PeekKind, HomeSection, MediaTrack, RadiosInfo, AudioInfo, MicInfo, WifiNetwork, BluetoothDevice, WIDGET_ORDER } from '../types/island';
 
 export interface BatteryInfo {
   percent: number;
@@ -12,7 +12,8 @@ interface IslandStore {
   activeWidget: WidgetType;
   slideDirection: number;
   pinned: boolean;
-  hasUserSelectedTab: boolean;
+  peekKind: PeekKind;
+  homeSection: HomeSection;
   stealthMode: boolean;
   isFullscreenHidden: boolean;
   peekTimeoutId: ReturnType<typeof setTimeout> | null;
@@ -23,6 +24,7 @@ interface IslandStore {
   battery: BatteryInfo;
   radios: RadiosInfo;
   audio: AudioInfo;
+  mic: MicInfo;
   brightness: number; // 0-100, default 80
   // Fetched on demand when a list is opened; null while loading
   wifiNetworks: WifiNetwork[] | null;
@@ -38,7 +40,8 @@ interface IslandStore {
   setStealthMode: (stealth: boolean) => void;
   setFullscreenHidden: (hidden: boolean) => void;
   /** durationMs <= 0 keeps the peek open until the user hovers or it is replaced */
-  peekWidget: (widget: WidgetType, durationMs?: number) => void;
+  peekWidget: (kind: PeekKind, durationMs?: number) => void;
+  setHomeSection: (section: HomeSection) => void;
   expand: (widget?: WidgetType) => void;
   collapse: (delayMs?: number) => void;
   cancelCollapse: () => void;
@@ -46,6 +49,7 @@ interface IslandStore {
   updateBattery: (battery: Partial<BatteryInfo>) => void;
   updateRadios: (radios: Partial<RadiosInfo>) => void;
   updateAudio: (audio: Partial<AudioInfo>) => void;
+  updateMic: (mic: MicInfo) => void;
   updateBrightness: (brightness: number) => void;
   setWifiNetworks: (networks: WifiNetwork[] | null) => void;
   setBtDevices: (devices: BluetoothDevice[] | null) => void;
@@ -61,11 +65,12 @@ const getInitialStealth = () => {
 
 export const useIslandStore = create<IslandStore>((set, get) => ({
   state: 'idle',
-  activeWidget: 'clock',
+  activeWidget: 'home',
   slideDirection: 1,
   pinned: false,
   stealthMode: getInitialStealth(),
-  hasUserSelectedTab: false,
+  peekKind: 'system',
+  homeSection: 'controls',
   isFullscreenHidden: false,
   peekTimeoutId: null,
   collapseTimeoutId: null,
@@ -101,6 +106,11 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     volume: -1,
   },
 
+  mic: {
+    active: false,
+    apps: [],
+  },
+
   brightness: 80,
 
   wifiNetworks: null,
@@ -109,21 +119,21 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
   setState: (state) => set({ state }),
 
   setActiveWidget: (activeWidget, direction = 1) => {
-    set({ activeWidget, slideDirection: direction, hasUserSelectedTab: true });
+    set({ activeWidget, slideDirection: direction });
   },
 
   nextWidget: () => {
     const current = get().activeWidget;
     const idx = WIDGET_ORDER.indexOf(current);
     const nextIdx = (idx + 1) % WIDGET_ORDER.length;
-    set({ activeWidget: WIDGET_ORDER[nextIdx], slideDirection: 1, hasUserSelectedTab: true });
+    set({ activeWidget: WIDGET_ORDER[nextIdx], slideDirection: 1 });
   },
 
   prevWidget: () => {
     const current = get().activeWidget;
     const idx = WIDGET_ORDER.indexOf(current);
     const prevIdx = (idx - 1 + WIDGET_ORDER.length) % WIDGET_ORDER.length;
-    set({ activeWidget: WIDGET_ORDER[prevIdx], slideDirection: -1, hasUserSelectedTab: true });
+    set({ activeWidget: WIDGET_ORDER[prevIdx], slideDirection: -1 });
   },
 
   setPinned: (pinned) => set({ pinned }),
@@ -145,68 +155,55 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
 
   setFullscreenHidden: (isFullscreenHidden) => set({ isFullscreenHidden }),
 
-  peekWidget: (widget, durationMs = 2800) => {
+  peekWidget: (kind, durationMs = 2800) => {
     const { peekTimeoutId, state, isFullscreenHidden } = get();
     if (isFullscreenHidden) return;
     if (peekTimeoutId) clearTimeout(peekTimeoutId);
+    // A finished timer opens on the Timer tab; media and system peeks keep the current tab
+    const activeWidget = kind === 'timer' ? 'timer' : get().activeWidget;
 
-    // If already expanded by user interaction, stay expanded and switch active widget
+    // If already expanded by user interaction, stay expanded
     if (state === 'expanded') {
-      set({ activeWidget: widget, slideDirection: 1 });
+      set({ activeWidget, peekKind: kind, slideDirection: 1 });
       return;
     }
 
     const timer = durationMs <= 0 ? null : setTimeout(() => {
-      const currentState = get().state;
-      if (currentState === 'peek') {
-        const { hasUserSelectedTab, activeWidget, media } = get();
-        const fallback = hasUserSelectedTab ? activeWidget : (media.isPlaying ? 'media' : 'clock');
-        set({
-          state: 'idle',
-          activeWidget: fallback,
-          peekTimeoutId: null,
-        });
-      }
+      if (get().state === 'peek') set({ state: 'idle', peekTimeoutId: null });
     }, durationMs);
 
     set({
       state: 'peek',
-      activeWidget: widget,
+      activeWidget,
+      peekKind: kind,
       peekTimeoutId: timer,
       slideDirection: 1,
     });
   },
 
+  setHomeSection: (homeSection) => set({ homeSection }),
+
   expand: (widget) => {
-    const { peekTimeoutId, collapseTimeoutId, isFullscreenHidden, media, activeWidget, hasUserSelectedTab } = get();
+    const { peekTimeoutId, collapseTimeoutId, isFullscreenHidden, activeWidget } = get();
     if (isFullscreenHidden) return;
     if (peekTimeoutId) clearTimeout(peekTimeoutId);
     if (collapseTimeoutId) clearTimeout(collapseTimeoutId);
 
-    // Respect user's chosen tab! Only default to media if user hasn't selected another tab.
-    const targetWidget = widget ?? (hasUserSelectedTab ? activeWidget : (media.isPlaying ? 'media' : activeWidget));
-
     set({
       state: 'expanded',
-      activeWidget: targetWidget,
+      activeWidget: widget ?? activeWidget,
       peekTimeoutId: null,
       collapseTimeoutId: null,
     });
   },
 
   collapse: (delayMs = 380) => {
-    const { collapseTimeoutId, pinned, hasUserSelectedTab, activeWidget, media } = get();
+    const { collapseTimeoutId, pinned } = get();
     if (pinned) return;
     if (collapseTimeoutId) clearTimeout(collapseTimeoutId);
 
     const timer = setTimeout(() => {
-      // In idle, respect user chosen widget
-      const fallback = hasUserSelectedTab ? activeWidget : (media.isPlaying ? 'media' : 'clock');
-      set({
-        state: 'idle',
-        activeWidget: fallback,
-        collapseTimeoutId: null,
-      });
+      set({ state: 'idle', collapseTimeoutId: null });
     }, delayMs);
 
     set({ collapseTimeoutId: timer });
@@ -228,8 +225,6 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
       (updated.artist && current.artist && updated.artist !== current.artist)
     );
     const isPlaying = updated.isPlaying !== undefined ? updated.isPlaying : current.isPlaying;
-    const justStartedPlaying = isPlaying && !current.isPlaying;
-    const { hasUserSelectedTab, activeWidget } = get();
 
     // Preserve existing thumbnail if current update didn't include one but song is same.
     // When a new track starts, if updated.albumArt is not provided, strictly clear it so previous song's thumbnail never leaks!
@@ -241,17 +236,8 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
       ? current.duration
       : updated.duration ?? current.duration;
 
-    // Only auto-switch to media if user has NOT explicitly picked another tab
-    let nextActive = activeWidget;
-    if (justStartedPlaying && !hasUserSelectedTab) {
-      nextActive = 'media';
-    } else if (!isPlaying && activeWidget === 'media' && !hasUserSelectedTab) {
-      nextActive = 'clock';
-    }
-
     set((s) => ({
       media: { ...s.media, ...updated, duration, albumArt, isPlaying },
-      activeWidget: nextActive,
     }));
 
     // Peek on track change ONLY IF music/video is actually playing!
@@ -273,7 +259,7 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     }));
 
     if (pluggedChanged || justBecameLow) {
-      get().peekWidget('clock', 3000);
+      get().peekWidget('system', 3000);
     }
   },
 
@@ -287,6 +273,13 @@ export const useIslandStore = create<IslandStore>((set, get) => ({
     set((s) => ({
       audio: { ...s.audio, ...updated },
     }));
+  },
+
+  updateMic: (mic) => {
+    const justStarted = mic.active && !get().mic.active;
+    set({ mic });
+    // Flash the indicator when an app starts recording
+    if (justStarted) get().peekWidget('system', 3000);
   },
 
   updateBrightness: (brightness) => {

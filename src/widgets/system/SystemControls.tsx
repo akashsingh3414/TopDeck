@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Sun, Volume2, VolumeX } from 'lucide-react';
 import { useIslandStore } from '../../store/useIslandStore';
 
+// One slim row per level: icon, track, percentage
 const LevelSlider: React.FC<{
   label: string;
   value: number;
@@ -10,14 +11,8 @@ const LevelSlider: React.FC<{
   onCommit: () => void;
   action?: React.ReactNode;
 }> = ({ label, value, icon, onChange, onCommit, action }) => (
-  <div className="flex flex-col justify-center h-[40px] px-2.5 rounded-xl bg-white/[0.055]">
-    <div className="flex items-center justify-between mb-0.5">
-      <div className="flex items-center gap-1.5 min-w-0">
-        {action ?? <span className="text-white/60 flex items-center">{icon}</span>}
-        <span className="text-[10px] font-medium tracking-wide text-white/65">{label}</span>
-      </div>
-      <span className="text-[10px] font-medium text-white/55 tabular-nums">{value}%</span>
-    </div>
+  <div className="flex items-center gap-2 h-5 px-0.5">
+    {action ?? <span className="text-white/60 flex items-center flex-shrink-0">{icon}</span>}
     <input
       type="range"
       min={0}
@@ -29,9 +24,10 @@ const LevelSlider: React.FC<{
       onChange={(event) => onChange(Number(event.target.value))}
       onPointerUp={onCommit}
       onKeyUp={onCommit}
-      className="level-slider w-full"
+      className="level-slider flex-1 min-w-0"
       style={{ '--range-progress': `${value}%` } as React.CSSProperties}
     />
+    <span className="w-7 flex-shrink-0 text-right text-[10px] font-medium text-white/55 tabular-nums">{value}%</span>
   </div>
 );
 
@@ -105,7 +101,7 @@ const SoundVolumeSlider: React.FC = () => {
             event.stopPropagation();
             window.islandAPI?.sendMediaCommand('MUTE');
           }}
-          className="text-white/60 hover:text-white transition-colors flex items-center"
+          className="text-white/60 hover:text-white transition-colors flex items-center flex-shrink-0"
         >
           {muted || value === 0
             ? <VolumeX className="w-3.5 h-3.5 text-white/60" />
@@ -119,7 +115,7 @@ const SoundVolumeSlider: React.FC = () => {
 };
 
 export const SystemControls: React.FC = () => (
-  <div className="flex flex-col gap-1.5 mt-0.5">
+  <div className="flex flex-col gap-1">
     <BrightnessSlider />
     <SoundVolumeSlider />
   </div>

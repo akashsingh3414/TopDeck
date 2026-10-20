@@ -84,6 +84,11 @@ if ($initialBrightness) {
     [Console]::WriteLine((ConvertTo-Json $initialBrightness -Compress))
 }
 
+$initialMic = Get-MicState
+if ($initialMic) {
+    [Console]::WriteLine((ConvertTo-Json $initialMic -Compress))
+}
+
 # Main loop
 $lastTitle = ""
 $lastStatus = $false
@@ -101,6 +106,7 @@ $lastBtConnected = $null
 $lastMuted = if ($initialAudio) { $initialAudio.muted } else { $null }
 $lastVolume = if ($initialAudio) { $initialAudio.volume } else { $null }
 $lastBrightness = if ($initialBrightness) { $initialBrightness.level } else { -1 }
+$lastMic = if ($initialMic) { ConvertTo-Json $initialMic -Compress } else { "" }
 $loopCount = 0
 
 while ($true) {
@@ -144,6 +150,18 @@ while ($true) {
             $lastMuted = $aState.muted
             $lastVolume = $aState.volume
             [Console]::WriteLine((ConvertTo-Json $aState -Compress))
+        }
+    }
+
+    # Microphone in use
+    if ($loopCount % 3 -eq 0) {
+        $mState = Get-MicState
+        if ($mState) {
+            $mJson = ConvertTo-Json $mState -Compress
+            if ($mJson -ne $lastMic) {
+                $lastMic = $mJson
+                [Console]::WriteLine($mJson)
+            }
         }
     }
 

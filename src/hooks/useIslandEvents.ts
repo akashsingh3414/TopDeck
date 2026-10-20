@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import { useTimerStore } from '../store/useTimerStore';
+import { useClipboardStore } from '../store/useClipboardStore';
 import { playTimerChime } from '../services/timerAudio';
 import { formatDuration } from '../utils/formatDuration';
-import type { WidgetType } from '../types/island';
+import type { PeekKind } from '../types/island';
 
 interface IslandEventActions {
   nextWidget: () => void;
   prevWidget: () => void;
   toggleStealthMode: () => void;
-  peekWidget: (widget: WidgetType, durationMs?: number) => void;
+  peekWidget: (kind: PeekKind, durationMs?: number) => void;
   pillRef: RefObject<HTMLDivElement | null>;
 }
 
@@ -46,6 +47,8 @@ export const useIslandEvents = ({
     const onKeyDown = (e: KeyboardEvent) => {
       const now = Date.now();
       if (now - lastKeyTime < 240) return;
+      // Arrows move the caret while typing in a field, not the tabs
+      if (e.target instanceof HTMLInputElement) return;
 
       if (e.key === 'ArrowRight') {
         lastKeyTime = now;
@@ -59,6 +62,16 @@ export const useIslandEvents = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [nextWidget, prevWidget]);
+
+  useEffect(() => {
+    const { add, prune } = useClipboardStore.getState();
+    const interval = setInterval(prune, 60_000);
+    const unsubscribe = window.islandAPI?.onClipboardChange?.(add);
+    return () => {
+      clearInterval(interval);
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!window.islandAPI?.onToggleSuperHide) return;
